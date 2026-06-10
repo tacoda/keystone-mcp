@@ -411,14 +411,37 @@ Shipped:
   across all three on a multi-source topic.
 - Tests: 14 new (`tests/adapters/test_notion.py`) via respx. Total: 82.
 
-## Phase 5+ — additional adapters
+## Phase 5 — Jira adapter (shipped)
+
+**Goal:** prove ticket-shaped reasoning retrieval. Issues are facts about
+in-flight work, not constraints — Phase 5 emits all output as reasoning.
+
+Shipped:
+- `jira` adapter (`adapters/jira.py`) — Jira Cloud REST v3, basic auth
+  (email + API token, same shape as Confluence). Query types:
+  - `issue` (by `key`) → 1 reasoning doc with a structured summary line
+    (`KEY [type, status] assignee=Name: summary`) plus the issue description
+    extracted from ADF.
+  - `jql` (JQL search, `limit` default 25 / cap 100) → reasoning per matching
+    issue; summary line only (no descriptions in list mode).
+  - Health endpoint hits `/rest/api/3/myself` and surfaces accountId +
+    displayName.
+- Atlassian Document Format (ADF) walker: recursive plain-text extraction.
+  Block-type boundaries (`paragraph`/`heading`/`list_item`/`codeBlock`/
+  `blockquote`/`rule`/`bulletList`/`orderedList`) emit newlines. Marks,
+  inline images, and hard breaks ignored.
+- Source URIs link directly to `{base_url}/browse/{KEY}` for human
+  verification.
+- Tests: 15 new (`tests/adapters/test_jira.py`) via respx, including ADF
+  walker unit tests. Total: 97.
+
+## Phase 6+ — additional adapters
 
 Ordered by likely user demand. Each must implement classifiers for some subset
 of `rules | reasoning | skills | commands`.
 
 | Adapter | Rules | Reasoning | Skills | Commands |
 |---|---|---|---|---|
-| Jira | exit criteria, DoD checklists | sprint goal, in-flight tickets | how-to descriptions on tickets | — |
 | Linear | (alt to Jira) | (alt to Jira) | (alt to Jira) | — |
 | Slack | pinned channel rules | recent discussion (read-only, time-bounded) | — | — |
 
@@ -475,7 +498,8 @@ keystone-mcp/
 │           ├── markdown.py      # Phase 1
 │           ├── github.py        # Phase 2
 │           ├── confluence.py    # Phase 3
-│           └── notion.py        # Phase 4
+│           ├── notion.py        # Phase 4
+│           └── jira.py          # Phase 5
 └── tests/
     ├── test_config.py
     ├── test_resolver.py
@@ -485,5 +509,6 @@ keystone-mcp/
         ├── test_markdown.py
         ├── test_github.py
         ├── test_confluence.py
-        └── test_notion.py
+        ├── test_notion.py
+        └── test_jira.py
 ```

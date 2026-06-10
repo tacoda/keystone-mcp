@@ -4,6 +4,7 @@ from typing import Any
 from .adapters.base import Adapter
 from .adapters.confluence import ConfluenceAdapter
 from .adapters.github import GitHubAdapter
+from .adapters.jira import JiraAdapter
 from .adapters.markdown import MarkdownAdapter
 from .adapters.notion import NotionAdapter
 from .cache import TTLCache, make_key, parse_ttl
@@ -68,11 +69,30 @@ def _build_notion(source: SourceConfig) -> NotionAdapter:
     )
 
 
+def _build_jira(source: SourceConfig) -> JiraAdapter:
+    s = source.settings
+    base_url = s.get("base_url")
+    if not base_url:
+        raise ConfigError(
+            f"source {source.name!r}: jira adapter requires 'base_url'"
+        )
+    email = s.get("email")
+    if not email:
+        raise ConfigError(f"source {source.name!r}: jira adapter requires 'email'")
+    token = s.get("auth")
+    if not token:
+        raise ConfigError(
+            f"source {source.name!r}: jira adapter requires 'auth' (API token)"
+        )
+    return JiraAdapter(base_url=base_url, email=email, token=token)
+
+
 _BUILDERS = {
     "markdown": _build_markdown,
     "github": _build_github,
     "confluence": _build_confluence,
     "notion": _build_notion,
+    "jira": _build_jira,
 }
 
 

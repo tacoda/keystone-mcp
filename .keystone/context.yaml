@@ -21,6 +21,13 @@ sources:
   #   type: notion
   #   auth: env:NOTION_TOKEN
 
+  # Uncomment when Jira Cloud credentials are set in the environment.
+  # tickets:
+  #   type: jira
+  #   base_url: https://acme.atlassian.net
+  #   email: env:JIRA_EMAIL
+  #   auth: env:JIRA_API_TOKEN
+
 topics:
   deploy-policy:
     description: |
@@ -106,3 +113,14 @@ topics:
   #         skills: { heading: "Procedures" }
   #         commands: { heading: "Commands" }
   #   cache: 10m
+
+  # my-open-issues:
+  #   description: |
+  #     All Jira issues currently assigned to me and not yet Done.
+  #   sources:
+  #     - source: tickets
+  #       query:
+  #         type: jql
+  #         jql: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
+  #         limit: 25
+  #   cache: 2m
