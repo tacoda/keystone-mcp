@@ -2,6 +2,7 @@ import asyncio
 from typing import Any
 
 from .adapters.base import Adapter
+from .adapters.confluence import ConfluenceAdapter
 from .adapters.github import GitHubAdapter
 from .adapters.markdown import MarkdownAdapter
 from .cache import TTLCache, make_key, parse_ttl
@@ -32,9 +33,30 @@ def _build_github(source: SourceConfig) -> GitHubAdapter:
     )
 
 
+def _build_confluence(source: SourceConfig) -> ConfluenceAdapter:
+    s = source.settings
+    base_url = s.get("base_url")
+    if not base_url:
+        raise ConfigError(
+            f"source {source.name!r}: confluence adapter requires 'base_url'"
+        )
+    email = s.get("email")
+    if not email:
+        raise ConfigError(
+            f"source {source.name!r}: confluence adapter requires 'email'"
+        )
+    token = s.get("auth")
+    if not token:
+        raise ConfigError(
+            f"source {source.name!r}: confluence adapter requires 'auth' (API token)"
+        )
+    return ConfluenceAdapter(base_url=base_url, email=email, token=token)
+
+
 _BUILDERS = {
     "markdown": _build_markdown,
     "github": _build_github,
+    "confluence": _build_confluence,
 }
 
 

@@ -9,6 +9,13 @@ sources:
   #   repo: tacoda/keystone-mcp
   #   auth: env:GITHUB_TOKEN
 
+  # Uncomment when Confluence credentials are set in the environment.
+  # wiki:
+  #   type: confluence
+  #   base_url: https://acme.atlassian.net
+  #   email: env:CONFLUENCE_EMAIL
+  #   auth: env:CONFLUENCE_API_TOKEN
+
 topics:
   deploy-policy:
     description: |
@@ -73,3 +80,24 @@ topics:
   #     - source: gh
   #       query: { type: recent_prs, limit: 5 }
   #   cache: 5m
+
+  # deploy-policy-live:
+  #   description: |
+  #     Live deploy policy from Confluence — supplements local docs.
+  #   sources:
+  #     - source: docs
+  #       query: { file: deploy-policy.md }
+  #       classify:
+  #         rules: { heading: "Rules", severity: must }
+  #         reasoning: { heading: "Background" }
+  #     - source: wiki
+  #       query:
+  #         type: page
+  #         title: "Deploy Runbook"
+  #         space: ENG
+  #       classify:
+  #         rules: { heading: "Rules" }
+  #         reasoning: { heading: "Background" }
+  #         skills: { heading: "Procedures" }
+  #         commands: { heading: "Commands" }
+  #   cache: 10m

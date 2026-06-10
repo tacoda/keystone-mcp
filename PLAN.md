@@ -366,14 +366,35 @@ Shipped:
 - Tests: 21 new (`tests/adapters/test_github.py`, `tests/test_payload.py`, plus
   multi-source case in `tests/test_resolver.py`). Total: 55 passing.
 
-## Phase 3+ — additional adapters
+## Phase 3 — Confluence adapter (shipped)
+
+**Goal:** prove a second external adapter with classified HTML body parsing.
+
+Shipped:
+- `confluence` adapter (`adapters/confluence.py`) — Confluence Cloud REST v2,
+  basic auth (email + API token). Query types:
+  - `page` (by `id` or `title` + `space` key) → classified docs parsed from
+    the page's `view` HTML body. Space key resolves to space-id on demand and
+    is cached per adapter instance.
+  - `space_pages` (list pages in a space) → reasoning (title + page id +
+    `createdAt` as `recency`).
+  - Health endpoint probes `/wiki/api/v2/spaces` for connectivity + auth.
+- HTML body parsed via BeautifulSoup. H2 sections classify the same way as
+  markdown (`rules`/`reasoning`/`skills`/`commands`). Inside skills/commands
+  sections, H3 sub-headings delimit entries; for commands, the first `<pre>`
+  or `<code>` block becomes the invocation.
+- Classify vocabulary stays identical to markdown — same `heading` /
+  `severity` selectors — so a topic can fan out across markdown +
+  Confluence with the same `classify` block on each binding.
+- Tests: 13 new (`tests/adapters/test_confluence.py`) via respx. Total: 68.
+
+## Phase 4+ — additional adapters
 
 Ordered by likely user demand. Each must implement classifiers for some subset
 of `rules | reasoning | skills | commands`.
 
 | Adapter | Rules | Reasoning | Skills | Commands |
 |---|---|---|---|---|
-| Confluence | runbooks, security/deploy policies | architecture docs, ADRs, RFCs | runbook procedures | curated CLI snippets in docs |
 | Notion | team agreements, OKRs as constraints | wiki pages, project briefs | onboarding playbooks | named recipes pages |
 | Jira | exit criteria, DoD checklists | sprint goal, in-flight tickets | how-to descriptions on tickets | — |
 | Linear | (alt to Jira) | (alt to Jira) | (alt to Jira) | — |
@@ -430,7 +451,8 @@ keystone-mcp/
 │           ├── __init__.py
 │           ├── base.py          # Adapter protocol
 │           ├── markdown.py      # Phase 1
-│           └── github.py        # Phase 2
+│           ├── github.py        # Phase 2
+│           └── confluence.py    # Phase 3
 └── tests/
     ├── test_config.py
     ├── test_resolver.py
@@ -438,5 +460,6 @@ keystone-mcp/
     ├── test_cache.py
     └── adapters/
         ├── test_markdown.py
-        └── test_github.py
+        ├── test_github.py
+        └── test_confluence.py
 ```
