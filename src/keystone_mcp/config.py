@@ -34,9 +34,16 @@ class TopicConfig:
 
 
 @dataclass(frozen=True)
+class CacheConfig:
+    backend: str = "memory"   # "memory" | "sqlite"
+    path: str | None = None   # required when backend == "sqlite"
+
+
+@dataclass(frozen=True)
 class KeystoneConfig:
     sources: dict[str, SourceConfig]
     topics: dict[str, TopicConfig]
+    cache: CacheConfig = CacheConfig()
 
 
 _ENV_PREFIX = "env:"
@@ -135,6 +142,23 @@ def _load_topics(
     return topics
 
 
+def _load_cache(raw: Any) -> CacheConfig:
+    if raw is None:
+        return CacheConfig()
+    if not isinstance(raw, dict):
+        raise ConfigError("'cache' must be a mapping")
+    backend = raw.get("backend", "memory")
+    if backend not in ("memory", "sqlite"):
+        raise ConfigError(
+            f"cache.backend must be memory|sqlite, got {backend!r}"
+        )
+    path = raw.get("path")
+    if backend == "sqlite":
+        if not path or not isinstance(path, str):
+            raise ConfigError("cache.path is required when backend is sqlite")
+    return CacheConfig(backend=backend, path=path)
+
+
 def load_config(path: str | Path) -> KeystoneConfig:
     path = Path(path)
     if not path.exists():
@@ -153,4 +177,5 @@ def load_config(path: str | Path) -> KeystoneConfig:
         raise ConfigError("'topics' must be a mapping")
     sources = _load_sources(sources_raw)
     topics = _load_topics(topics_raw, sources)
-    return KeystoneConfig(sources=sources, topics=topics)
+    cache = _load_cache(raw.get("cache"))
+    return KeystoneConfig(sources=sources, topics=topics, cache=cache)

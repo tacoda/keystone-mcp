@@ -522,24 +522,59 @@ Code volume cut: each of the three heading-based adapters lost ~80 lines of
 duplicated extractor/walker logic, replaced by a single
 `classify_sections(...)` call.
 
-## Phase 9+ — remaining open work
+## Phase 9 — persistent sqlite cache (shipped)
 
-No adapters left to ship. Remaining threads target open design questions:
+**Goal:** survive process restarts without re-paying external-API
+round-trip latency for every topic.
 
-- **Persistent cache** (open Q3). Phase 1's in-memory TTL is fine for short
-  sessions, but reopening a fresh server every invocation pays the GitHub /
-  Confluence / Notion / Jira / Linear / Slack round-trip latencies cold.
-  sqlite-backed cache keyed by `(topic, source, query-hash)` with TTL is the
-  obvious shape.
-- **Secret-store auth** (open Q2). `env:NAME` is portable but forces secrets
-  into shell rc files. Macos Keychain / 1Password CLI integration via a
+Shipped:
+- `SqliteCache` (in `cache.py`) — same `get(key) -> Any | None` /
+  `put(key, value, ttl_seconds)` interface as `TTLCache`. Values pickled
+  (HIGHEST_PROTOCOL). Schema: `cache(key TEXT PRIMARY KEY, value BLOB,
+  expires_at REAL)`. Uses wall-clock (`time.time()`) so entries written by a
+  previous process stay valid after restart.
+- Opportunistic eviction: expired rows are deleted on `get`. Corrupt /
+  schema-mismatched pickle blobs are treated as a miss and dropped, so a
+  stale DB doesn't poison a fresh process.
+- Parent directory created on first write.
+- `CacheConfig` in `config.py`: top-level `cache: { backend, path }` block.
+  Defaults to `{ backend: "memory", path: None }` when omitted. `sqlite`
+  requires `path`; loader raises on missing path or unknown backend.
+- `Resolver(__init__)` falls back to `build_cache(config.cache)` when no
+  cache is passed explicitly. Existing tests passing `cache=...` directly
+  continue to work.
+- 12 new tests: 7 on `SqliteCache` directly (roundtrip, miss, expiry,
+  cross-instance persistence, overwrite, parent-dir creation, corrupt-entry
+  handling), 4 on cache config loading (default, sqlite happy path, missing
+  path, unknown backend), 1 resolver-integration test that proves a second
+  `Resolver` reading the same DB sees `cache_hit=True` on the second
+  fetch. Total: 171.
+
+Closes open question on caching backend.
+
+## Phase 10+ — remaining open work
+
+No adapters left. Remaining threads target the still-open design questions
+and project polish:
+
+- **README + install / quickstart docs.** README is empty. Block to anyone
+  landing on the repo.
+- **Packaging.** Publish to PyPI and wire `uvx keystone-mcp` as the
+  documented install path so consumers don't need to clone.
+- **Real-world smoke test.** Run against live Jira creds (and any others on
+  hand) to catch real-API drift from the respx mocks.
+- **Secret-store auth** (open Q2). `env:NAME` works but forces secrets into
+  shell rc files. Macos Keychain / 1Password CLI integration via a
   `secret:NAME` scheme that calls out at config-load time.
 - **Proactive rule injection** (open Q6). The host could stitch
   `must`-severity rules from a configured "session-prelude" topic into the
   system prompt at session start, so the agent has them before the first
   tool call.
+- **`agents` payload kind.** Same shape as rules/reasoning/skills/commands.
+  Deferred from Phase 8 question — revisit when a concrete need appears.
 - **Classifier strength DSL** (open Q4). Defer until a real
   misclassification incident surfaces; then design from the failure shape.
+- **Multi-tenant server** (open Q5). Defer; no concrete demand yet.
 
 ---
 
@@ -553,8 +588,10 @@ Explicit deferrals. Each closes before the relevant phase ships.
    detected mechanically and surface as separate rules for the agent to flag.
 2. **Auth strategy.** Per-source env vars are simplest. Worth integrating with
    macOS Keychain / 1Password CLI later? Decide before Phase 2.
-3. **Caching backend.** In-memory is fine for Phase 1. Persistent cache
-   (sqlite?) becomes relevant if startup latency or rate limits bite.
+3. ~~**Caching backend.**~~ **Closed in Phase 9.** Sqlite backend ships
+   alongside the in-memory default. Top-level `cache: { backend, path }`
+   block in config; pickle-serialized values; wall-clock TTL so entries
+   written by a prior process stay valid after restart.
 4. **Classifier strength.** Heading/tag selectors are crude. Do we need a richer
    DSL (XPath, frontmatter, structured annotations)? Wait for real misclassification
    pain before adding complexity.

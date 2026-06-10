@@ -9,8 +9,8 @@ from .adapters.linear import LinearAdapter
 from .adapters.markdown import MarkdownAdapter
 from .adapters.notion import NotionAdapter
 from .adapters.slack import SlackAdapter
-from .cache import TTLCache, make_key, parse_ttl
-from .config import KeystoneConfig, SourceConfig, TopicConfig
+from .cache import SqliteCache, TTLCache, make_key, parse_ttl
+from .config import CacheConfig, KeystoneConfig, SourceConfig, TopicConfig
 from .errors import ConfigError, UnknownSourceError, UnknownTopicError
 from .payload import ContextDoc, ContextEnvelope, docs_to_envelope, merge_rules
 
@@ -136,10 +136,20 @@ def build_adapter(source: SourceConfig) -> Adapter:
     return builder(source)
 
 
+def build_cache(spec: CacheConfig):
+    if spec.backend == "memory":
+        return TTLCache()
+    if spec.backend == "sqlite":
+        if not spec.path:
+            raise ConfigError("cache.path is required when backend is sqlite")
+        return SqliteCache(spec.path)
+    raise ConfigError(f"unknown cache backend {spec.backend!r}")
+
+
 class Resolver:
-    def __init__(self, config: KeystoneConfig, cache: TTLCache | None = None) -> None:
+    def __init__(self, config: KeystoneConfig, cache=None) -> None:
         self._config = config
-        self._cache = cache or TTLCache()
+        self._cache = cache if cache is not None else build_cache(config.cache)
         self._adapters: dict[str, Adapter] = {}
 
     def _adapter_for(self, source_name: str) -> Adapter:

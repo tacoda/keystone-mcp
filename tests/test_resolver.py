@@ -104,6 +104,48 @@ async def test_list_topics(resolver):
     assert slugs == {"deploy", "unstructured"}
 
 
+async def test_sqlite_cache_hits_across_resolver_instances(tmp_path):
+    ctx = tmp_path / "ctx"
+    ctx.mkdir()
+    md = ctx / "deploy.md"
+    md.write_text(
+        """## Rules
+
+- MUST pass CI.
+"""
+    )
+    cfg_path = tmp_path / "context.yaml"
+    cfg_path.write_text(
+        f"""
+sources:
+  docs:
+    type: markdown
+    root: {ctx}
+topics:
+  deploy:
+    description: d
+    source: docs
+    query: {{ file: deploy.md }}
+    classify:
+      rules: {{ heading: Rules }}
+    cache: 60s
+cache:
+  backend: sqlite
+  path: {tmp_path / 'cache.db'}
+"""
+    )
+    cfg = load_config(cfg_path)
+    r1 = Resolver(cfg)
+    first = await r1.get_context("deploy")
+    assert first.cache_hit is False
+
+    # New Resolver, same on-disk cache.
+    r2 = Resolver(load_config(cfg_path))
+    second = await r2.get_context("deploy")
+    assert second.cache_hit is True
+    assert [rule.text for rule in second.rules] == [rule.text for rule in first.rules]
+
+
 async def test_health_for_markdown(resolver):
     h = await resolver.health("docs")
     assert h["ok"] is True

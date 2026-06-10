@@ -164,3 +164,11 @@ topics:
   #         limit: 25
   #         since: "2026-06-01T00:00:00Z"
   #   cache: 5m
+
+# Optional persistent cache. Memory backend is the default (lost on restart).
+# Sqlite survives process restarts and is keyed by (topic, query-hash) with
+# per-topic TTL.
+#
+# cache:
+#   backend: sqlite
+#   path: .keystone/cache.db

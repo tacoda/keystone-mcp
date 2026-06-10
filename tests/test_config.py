@@ -153,3 +153,68 @@ topics:
         )
     )
     assert cfg.topics["t"].tags == ("a", "b")
+
+
+def test_cache_defaults_to_memory_when_omitted(tmp_path):
+    cfg = load_config(
+        _write(
+            tmp_path,
+            """
+sources:
+  docs: { type: markdown, root: /tmp/x }
+topics: {}
+""",
+        )
+    )
+    assert cfg.cache.backend == "memory"
+    assert cfg.cache.path is None
+
+
+def test_cache_sqlite_loads_with_path(tmp_path):
+    cfg = load_config(
+        _write(
+            tmp_path,
+            """
+sources:
+  docs: { type: markdown, root: /tmp/x }
+topics: {}
+cache:
+  backend: sqlite
+  path: .keystone/cache.db
+""",
+        )
+    )
+    assert cfg.cache.backend == "sqlite"
+    assert cfg.cache.path == ".keystone/cache.db"
+
+
+def test_cache_sqlite_requires_path(tmp_path):
+    with pytest.raises(ConfigError, match="cache.path is required"):
+        load_config(
+            _write(
+                tmp_path,
+                """
+sources:
+  docs: { type: markdown, root: /tmp/x }
+topics: {}
+cache:
+  backend: sqlite
+""",
+            )
+        )
+
+
+def test_cache_rejects_unknown_backend(tmp_path):
+    with pytest.raises(ConfigError, match="must be memory"):
+        load_config(
+            _write(
+                tmp_path,
+                """
+sources:
+  docs: { type: markdown, root: /tmp/x }
+topics: {}
+cache:
+  backend: redis
+""",
+            )
+        )
