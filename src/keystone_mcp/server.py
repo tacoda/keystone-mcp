@@ -16,11 +16,20 @@ This server retrieves company context as four kinds of payload:
   - skills:    procedural how-to knowledge (multi-step playbooks)
   - commands:  canned invocations (shell commands, scripts, named recipes)
 
-Call `list_topics` or read `context://list` to see what's available. Use
-`get_context(topic)` for the full envelope, or narrow with `get_rules`,
-`get_reasoning`, `get_skills`, or `get_commands`. Rules with severity `must`
-are non-negotiable; surface conflicts to the user rather than silently
-overriding them.
+Read-only retrieval is exposed as MCP resources:
+  - context://list                  directory of configured topics
+  - context://{topic}               full envelope for a topic
+  - source://{name}/health          adapter reachability + auth state
+  - harness://status                harness layout audit (root=harness)
+  - harness://{root}/status         harness layout audit at a custom root
+  - harness://options               valid scaffold-tool arguments
+
+Tools cover parameterized retrieval and write operations:
+  - get_context(topic), list_topics(tag?)
+  - harness_bootstrap / harness_new_* / harness_target_add
+
+Rules with severity `must` are non-negotiable; surface conflicts to the user
+rather than silently overriding them.
 """.strip()
 
 
@@ -33,6 +42,8 @@ def build_server() -> FastMCP:
     resolver = Resolver(config)
     mcp = FastMCP(name="keystone-mcp", instructions=INSTRUCTIONS)
 
+    # Tools: parameterized retrieval + write operations ------------------
+
     @mcp.tool
     async def get_context(topic: str) -> dict:
         """Full envelope (rules + reasoning + skills + commands) for a topic."""
@@ -40,49 +51,40 @@ def build_server() -> FastMCP:
         return env.to_dict()
 
     @mcp.tool
-    async def get_rules(topic: str) -> dict:
-        """Rules only — constraints the agent must obey for this topic."""
-        env = await resolver.get_rules(topic)
-        return env.to_dict()
-
-    @mcp.tool
-    async def get_reasoning(topic: str) -> dict:
-        """Reasoning only — background facts and intent for this topic."""
-        env = await resolver.get_reasoning(topic)
-        return env.to_dict()
-
-    @mcp.tool
-    async def get_skills(topic: str) -> dict:
-        """Skills only — procedural how-to knowledge for this topic."""
-        env = await resolver.get_skills(topic)
-        return env.to_dict()
-
-    @mcp.tool
-    async def get_commands(topic: str) -> dict:
-        """Commands only — canned invocations (e.g. shell commands) for this topic."""
-        env = await resolver.get_commands(topic)
-        return env.to_dict()
-
-    @mcp.tool
     async def list_topics(tag: str | None = None) -> list[dict]:
-        """List all configured topics with descriptions. Pass `tag` to filter."""
+        """List configured topics. Pass `tag` to filter."""
         return resolver.list_topics(tag=tag)
 
-    @mcp.tool
-    async def source_health(source: str) -> dict:
-        """Check whether a configured source is reachable and authenticated."""
-        return await resolver.health(source)
+    # Resources: read-only data ------------------------------------------
 
-    @mcp.resource("context://list")
+    _READ_ONLY = {"readOnlyHint": True, "idempotentHint": True}
+
+    @mcp.resource("context://list", annotations=_READ_ONLY)
     async def context_list_resource() -> str:
         return json.dumps(resolver.list_topics(), indent=2)
 
-    @mcp.resource("context://{topic}")
+    @mcp.resource("context://{topic}", annotations=_READ_ONLY)
     async def context_resource(topic: str) -> str:
         env = await resolver.get_context(topic)
         return json.dumps(env.to_dict(), indent=2, default=str)
 
-    # Harness scaffold tools (Phase 11b) ----------------------------------
+    @mcp.resource("source://{name}/health", annotations=_READ_ONLY)
+    async def source_health_resource(name: str) -> str:
+        return json.dumps(await resolver.health(name), indent=2)
+
+    @mcp.resource("harness://status", annotations=_READ_ONLY)
+    async def harness_status_resource() -> str:
+        return json.dumps(Scaffold("harness").status(), indent=2)
+
+    @mcp.resource("harness://{root}/status", annotations=_READ_ONLY)
+    async def harness_status_at_root_resource(root: str) -> str:
+        return json.dumps(Scaffold(root).status(), indent=2)
+
+    @mcp.resource("harness://options", annotations=_READ_ONLY)
+    async def harness_options_resource() -> str:
+        return json.dumps(options_catalog(), indent=2)
+
+    # Harness scaffold tools (write operations) --------------------------
 
     @mcp.tool
     async def harness_bootstrap(root: str = "harness") -> dict:
@@ -168,16 +170,6 @@ def build_server() -> FastMCP:
         return Scaffold(root).target_add(
             agent, project_root=project_root, force=force
         )
-
-    @mcp.tool
-    async def harness_status(root: str = "harness") -> dict:
-        """Audit the harness layout: which subdirs exist and how many files in each."""
-        return Scaffold(root).status()
-
-    @mcp.tool
-    async def harness_options_catalog() -> dict:
-        """List valid arguments for the harness scaffold tools."""
-        return options_catalog()
 
     return mcp
 

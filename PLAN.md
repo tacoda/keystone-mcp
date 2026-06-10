@@ -613,20 +613,58 @@ Shipped:
 - Name validation rejects path-traversal / empty / punctuated names.
 - 29 new tests (`tests/test_harness_scaffold.py`). 217 total.
 
-Keystone CLI commands replaced by MCP tools:
+Keystone CLI commands replaced by MCP tools / resources:
 
-| Keystone CLI | MCP tool |
+| Keystone CLI | MCP surface |
 |---|---|
-| `keystone init` | `harness_bootstrap` + `harness_target_add` |
-| `keystone new guide` | `harness_new_guide` |
-| `keystone new sensor` | `harness_new_sensor` |
-| `keystone new action` | `harness_new_action` |
-| `keystone new playbook` | `harness_new_playbook` |
-| `keystone new adapter` | `harness_new_adapter` |
-| `keystone target add` | `harness_target_add` |
-| `keystone doctor` (minus plugin checks) | `harness_status` |
-| `keystone options` | `harness_options_catalog` |
+| `keystone init` | `harness_bootstrap` + `harness_target_add` (tools) |
+| `keystone new guide` | `harness_new_guide` (tool) |
+| `keystone new sensor` | `harness_new_sensor` (tool) |
+| `keystone new action` | `harness_new_action` (tool) |
+| `keystone new playbook` | `harness_new_playbook` (tool) |
+| `keystone new adapter` | `harness_new_adapter` (tool) |
+| `keystone target add` | `harness_target_add` (tool) |
+| `keystone doctor` (minus plugin checks) | `harness://status` (resource, after Phase 12) |
+| `keystone options` | `harness://options` (resource, after Phase 12) |
 | `keystone install` / `plugin *` / `patch` / `verify` | **dropped** — MCP serves live context in place of vendored plugins |
+
+## Phase 12 — FastMCP-conformance reshape (shipped)
+
+**Goal:** align the MCP surface with FastMCP's three primitives — tools,
+resources, prompts. Read-only ops move to resources; writes and
+parameterized reads stay as tools.
+
+Shipped:
+- Dropped 7 read-only tools: `get_rules`, `get_reasoning`, `get_skills`,
+  `get_commands`, `source_health`, `harness_status`,
+  `harness_options_catalog`.
+- Added 3 resource templates + 3 static resources:
+  - `context://list` (static) — topic directory
+  - `context://{topic}` (template) — full envelope. The agent reads the
+    envelope and extracts the kind it needs; no narrow URL slices needed
+    when the resource is fetched directly via MCP.
+  - `source://{name}/health` (template) — adapter reachability + auth state
+  - `harness://status` (static, default root=harness) — layout audit
+  - `harness://{root}/status` (template) — layout audit at a custom root
+  - `harness://options` (static) — valid scaffold tool arguments
+- All resources annotated `readOnlyHint: true, idempotentHint: true`.
+- Kept as tools (parameterized read or write):
+  - `get_context(topic)` — canonical entry, parameterized
+  - `list_topics(tag?)` — optional filter
+  - All `harness_bootstrap` / `harness_new_*` / `harness_target_add` — writes
+- INSTRUCTIONS block updated to document the new surface.
+- 217 tests still pass (no test churn — server surface had no direct test
+  coverage; integration smoke confirms 9 tools + 3 static resources + 3
+  resource templates register correctly).
+
+**Deferred to follow-up:** FastMCP's `SkillsDirectoryProvider` exposes
+`<dir>/<name>/SKILL.md` directories as `skill://` resources, discoverable
+by clients that understand the skill primitive (Claude Code, Cursor, etc.).
+Our scaffold writes `actions/<name>.md` / `playbooks/<name>.md`, not the
+required directory-per-skill layout. Mounting the provider would either
+require changing the scaffold layout or adding a separate
+`<harness>/skills/` dir alongside actions/playbooks. Decide direction
+before Phase 13.
 
 ## Phase 12+ — remaining open work
 

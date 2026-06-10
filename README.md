@@ -11,13 +11,16 @@ The agent treats each kind differently:
 - **commands** — canned invocations (shell commands, scripts, named recipes)
 
 Instead of cramming organizational context into every system prompt, the agent
-asks for context by intent (`get_rules("deploy")`, `get_reasoning("billing-service")`)
-and the broker fans the request out to the right backing source.
+reads `context://{topic}` resources or calls `get_context(topic)` and the
+broker fans the request out to the right backing source.
 
 ## Status
 
-Phases 1–9 shipped. Seven adapters live, plus a shared classifier, multi-source
-merge with conflict resolution, and a persistent sqlite cache. 171 tests pass.
+Phases 1–12 shipped. Seven external adapters plus a harness adapter, shared
+classifier, multi-source merge with conflict resolution, persistent sqlite
+cache, FastMCP-conforming surface (resources for read-only data, tools for
+parameterized reads and writes), and a harness scaffold tool surface. 217
+tests pass.
 
 See [`PLAN.md`](./PLAN.md) for the full design and remaining open work.
 
@@ -110,7 +113,7 @@ directory; override with `KEYSTONE_CONFIG`.
    ```
 
 3. Start the server. The agent now sees `deploy-policy` in `list_topics` and
-   can call `get_rules("deploy-policy")` to load the two rules.
+   can read `context://deploy-policy` to load the envelope.
 
 The repo's own [`.keystone/context.yaml`](./.keystone/context.yaml) is a
 working example with topics for deploys, ownership, coding standards, and a
@@ -123,19 +126,25 @@ release playbook (plus commented-out examples of every external adapter).
 | Tool | Returns |
 |---|---|
 | `get_context(topic)` | full envelope (rules + reasoning + skills + commands) |
-| `get_rules(topic)` | rules only |
-| `get_reasoning(topic)` | reasoning only |
-| `get_skills(topic)` | skills only |
-| `get_commands(topic)` | commands only |
 | `list_topics(tag?)` | directory of configured topics |
-| `source_health(source)` | adapter reachability + auth state |
+| `harness_bootstrap(root?)` | scaffold the harness skeleton |
+| `harness_new_guide(name, tier?)` | scaffold a new guide |
+| `harness_new_sensor(name, kind?)` | scaffold a new sensor |
+| `harness_new_action(name)` | scaffold a new action |
+| `harness_new_playbook(name, actions?)` | scaffold a new playbook |
+| `harness_new_adapter(agent)` | scaffold a per-agent adapter dir |
+| `harness_target_add(agent, project_root?)` | install agent menu file at project root |
 
 ### Resources
 
 | URI | Purpose |
 |---|---|
 | `context://list` | configured topic directory |
-| `context://<topic>` | full envelope for one topic |
+| `context://{topic}` | full envelope for one topic |
+| `source://{name}/health` | adapter reachability + auth state |
+| `harness://status` | harness layout audit (root=harness) |
+| `harness://{root}/status` | harness layout audit at a custom root |
+| `harness://options` | valid scaffold-tool arguments |
 
 ### Envelope shape
 
