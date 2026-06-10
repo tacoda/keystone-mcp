@@ -1,0 +1,412 @@
+# keystone-mcp — Plan
+
+An MCP server that retrieves contextual information from company resources and
+surfaces it to coding agents as **rules to obey**, **reasoning to consult**,
+**skills to follow**, and **commands to consider running**.
+
+---
+
+## What this is
+
+A context broker. The agent asks for context relevant to its current work; the
+server fetches from one or more company resources (wikis, docs, ticket systems,
+repo files, etc.) and returns a structured payload with four kinds:
+
+- **`rules`** — constraints the agent must follow (e.g., "all schema changes
+  require a migration file", "deploys to prod gated on green CI"). Severity
+  `must` / `should` / `may`.
+- **`reasoning`** — background facts that inform decisions but don't constrain
+  them (e.g., team roster, sprint goal, architectural intent).
+- **`skills`** — procedural how-to knowledge: multi-step playbooks the agent
+  can follow (e.g., "how to cut a patch release", "how to roll back a deploy").
+- **`commands`** — canned invocations the agent can execute, each with a name,
+  a literal invocation (typically shell), and a description of when to use it.
+
+The agent treats each kind differently: rules are non-negotiable, reasoning is
+input to judgment, skills are procedures to follow, commands are invocations
+to consider running.
+
+## What this is not
+
+- **Not a verbatim service wrapper.** Official MCP servers for Atlassian, Notion,
+  GitHub already exist for *operating* those systems. This server sits above them
+  at the contextual-retrieval layer.
+- **Not a static rules file.** Rules in `.claude/rules/` are loaded by the host
+  at session start. This server returns rules that depend on **live data** — who
+  owns this module, what's in the current sprint, what the latest runbook says.
+- **Not a database.** Source systems own their data. This server resolves,
+  fetches, normalizes, optionally caches.
+- **Not an LLM.** It does not summarize, rank, or reason about retrieved content
+  beyond mechanical filtering. The agent reasons; the server retrieves.
+
+---
+
+## Why this exists
+
+Coding agents fail at organizational context. They lack two things:
+
+1. **Knowledge of constraints** that aren't visible in the code (deploy windows,
+   review policies, security requirements, domain invariants).
+2. **Knowledge of intent** that isn't documented in the diff (why this module
+   exists, what the team is currently focused on, who owns what).
+
+Both live in company resources — Confluence pages, Notion wikis, Jira tickets,
+runbooks, ADRs, team rosters. Pulling them in *every* session via system prompt
+is wasteful; pulling them in *when relevant* via a typed MCP call is targeted.
+
+The broker shape (one server, many sources) keeps the agent's mental model small:
+it asks for context by intent (`rules_for("deploy")`,
+`reasoning_for("billing-service")`), not by source.
+
+---
+
+## Design principles
+
+1. **Payload kind is a first-class distinction.** Every retrieval returns all
+   four lists (`rules`, `reasoning`, `skills`, `commands`), even when some are
+   empty. Mixing them collapses the agent's decision-making — a how-to is not a
+   constraint, and a constraint is not a fact.
+2. **Repo owns the context map.** Which resources back which queries is declared
+   in repo-local config, version-controlled with the code.
+3. **Adapters are pluggable.** Each resource type is a module implementing a
+   common interface. Adding a resource is adding an adapter.
+4. **Broker, not store.** Default behavior is passthrough fetch. Caching is
+   opt-in per query with a TTL.
+5. **Discoverable surface.** The agent sees the catalog of available context
+   queries via `resources/list` — names + descriptions only.
+6. **Fail loud at boundaries.** Missing credentials, malformed config, or
+   unreachable sources surface explicit errors.
+7. **Read-only by default.** No adapter writes back to a source unless a future
+   phase explicitly opens that door.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  FastMCP server                                              │
+│                                                              │
+│   resources                  tools                           │
+│   ├── context://list         ├── get_context(topic)          │
+│   ├── context://<topic>      ├── get_rules(topic)            │
+│   └── source://<n>/health    ├── get_reasoning(topic)        │
+│                              ├── get_skills(topic)           │
+│                              ├── get_commands(topic)         │
+│                              └── list_topics(tag?)           │
+│                                                              │
+│   ┌──────────────────────────────────────────────────────┐   │
+│   │  Resolver                                            │   │
+│   │   reads context.yaml → routes topic to adapter(s)    │   │
+│   │   normalizes results → {rules[], reasoning[]}        │   │
+│   └──────────────────────────────────────────────────────┘   │
+│                            │                                 │
+│   ┌────────┬────────┬──────┴──────┬─────────┬──────────┐     │
+│   ▼        ▼        ▼             ▼         ▼          ▼     │
+│ Markdown  Jira  Confluence      Notion    GitHub    (more)   │
+│  (P1)    (P2)    (P2)            (P2)     (P2)              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Components
+
+- **FastMCP server** — entrypoint, registers resources and tools.
+- **Resolver** — loads config, maps a topic to one or more adapter calls,
+  bins results by kind (`rules`/`reasoning`/`skills`/`commands`), applies caching.
+- **Adapters** — one per resource type. Implements
+  `fetch(query, classify) -> list[ContextDoc]` where each doc carries a
+  `kind: rule | reasoning | skill | command` tag.
+- **Topic registry** — in-memory representation of the topic map, rebuilt on
+  config change.
+- **Cache** — keyed by `(topic, source, query-hash)`. In-memory for Phase 1.
+
+---
+
+## Payload shape
+
+Every context retrieval returns the same envelope:
+
+```json
+{
+  "topic": "deploy-policy",
+  "rules": [
+    {
+      "id": "deploy-001",
+      "text": "Production deploys require two approvals on the PR.",
+      "source": "confluence://deploy-runbook#approvals",
+      "severity": "must"
+    }
+  ],
+  "reasoning": [
+    {
+      "text": "Team prefers Friday morning deploys to leave weekend for rollback.",
+      "source": "notion://eng-wiki/deploy-cadence",
+      "recency": "2026-04-12"
+    }
+  ],
+  "skills": [
+    {
+      "id": "procedures-001",
+      "name": "Cut a patch release",
+      "body": "1. Confirm main is green ... 5. Watch the release workflow.",
+      "source": "markdown://release-playbook.md#procedures/cut-a-patch-release"
+    }
+  ],
+  "commands": [
+    {
+      "id": "commands-001",
+      "name": "tag-release",
+      "invocation": "git tag -a vX.Y.Z -m 'release' && git push --tags",
+      "description": "Run after the patch-release procedure to tag and push.",
+      "source": "markdown://release-playbook.md#commands/tag-release"
+    }
+  ],
+  "fetched_at": "2026-06-10T14:32:00Z",
+  "cache_hit": false
+}
+```
+
+Conventions:
+- `rules[].severity` ∈ `{must, should, may}` — maps to RFC-2119-ish strength.
+- `rules[].source` is a stable URI back to the originating doc so the agent
+  (and humans) can verify.
+- `reasoning[]` is unranked; agent decides what's relevant.
+- `skills[]` carry a `name` + free-form `body`. The body is the playbook text;
+  the agent reads it the same way a human follows a runbook.
+- `commands[]` carry a `name`, a literal `invocation` (typically shell), and a
+  `description` explaining when to use it. Agents do not execute commands
+  automatically — they propose them to the user.
+- Adapters classify their own output via config-declared selectors (heading,
+  tag, CSS, JQL field). Misclassification is a config bug, not a server bug.
+
+---
+
+## Configuration model
+
+Single YAML file in the consuming repo (`.keystone/context.yaml`).
+
+```yaml
+sources:
+  docs:
+    type: markdown
+    root: .keystone/context/
+
+  wiki:
+    type: confluence
+    base_url: https://acme.atlassian.net/wiki
+    space: ENG
+    auth: env:CONFLUENCE_TOKEN
+    email: env:CONFLUENCE_EMAIL
+
+  tickets:
+    type: jira
+    base_url: https://acme.atlassian.net
+    project: ENG
+    auth: env:JIRA_TOKEN
+    email: env:JIRA_EMAIL
+
+topics:
+  deploy-policy:
+    description: |
+      Rules and context for production deploys. Read before any change touching
+      deploy scripts, CI config, or release tooling.
+    sources:
+      - source: docs
+        query: { file: deploy-policy.md }
+        classify:
+          rules:    { heading: "Rules" }
+          reasoning: { heading: "Background" }
+      - source: wiki
+        query: { page: "Deploy Runbook" }
+        classify:
+          rules:    { tag: "must" }
+          reasoning: { tag: "context" }
+    cache: 15m
+
+  current-sprint:
+    description: |
+      Active sprint goal and in-flight work. Read when planning, estimating, or
+      choosing what to pick up next.
+    sources:
+      - source: tickets
+        query: { type: sprint.active }
+        classify:
+          reasoning: { all: true }   # tickets are facts, not rules
+    cache: 5m
+
+  module-ownership:
+    description: |
+      Who owns a given module and how to reach them.
+    sources:
+      - source: docs
+        query: { file: owners.md }
+        classify:
+          rules:    { heading: "Required reviewers" }
+          reasoning: { heading: "Contacts" }
+```
+
+Notes:
+- Secrets resolve from environment variables (`env:NAME`). No secrets in YAML.
+- `classify` is how an adapter decides which chunks become rules vs reasoning.
+  Selector vocabulary varies per adapter type (heading, tag, CSS, JQL field).
+- `description` is shown in `context://list` — should explain *when* to call,
+  not *what data comes back*.
+
+---
+
+## MCP surface
+
+### Resources
+
+| URI | Purpose |
+|---|---|
+| `context://list` | Directory of all configured topics (slugs + descriptions). Cheap. |
+| `context://<topic>` | Full payload (rules + reasoning) for one topic. Triggers fetch. |
+| `source://<name>/health` | Adapter status, last successful fetch, auth state. |
+
+### Tools
+
+| Tool | Purpose |
+|---|---|
+| `get_context(topic)` | Full envelope: rules + reasoning + skills + commands. Default call. |
+| `get_rules(topic)` | Rules only. Use when the agent is about to act and needs constraints. |
+| `get_reasoning(topic)` | Reasoning only. Use when the agent is exploring or explaining. |
+| `get_skills(topic)` | Skills only. Use when the agent needs a how-to / playbook. |
+| `get_commands(topic)` | Commands only. Use when the agent needs a canned invocation. |
+| `list_topics(tag?)` | Filtered topic directory. Tags optional in YAML. |
+
+### Server instructions block
+
+```
+This server retrieves company context as four kinds of payload:
+  - rules:     constraints to obey (severity must/should/may)
+  - reasoning: background facts and intent
+  - skills:    procedural how-to knowledge (multi-step playbooks)
+  - commands:  canned invocations (shell commands, scripts, named recipes)
+
+Call `list_topics` or read `context://list` to see what's available. Use
+`get_context(topic)` for the full envelope, or narrow with `get_rules`,
+`get_reasoning`, `get_skills`, or `get_commands`. Rules with severity `must`
+are non-negotiable; surface conflicts to the user rather than silently
+overriding them.
+```
+
+---
+
+## Phase 1 — markdown adapter, end-to-end
+
+**Goal:** prove the four-kind payload (rules, reasoning, skills, commands)
+end-to-end against the simplest possible resource. No external auth, no rate
+limits, just repo-local files.
+
+In scope:
+- FastMCP server skeleton, stdio transport.
+- YAML config loader + topic registry (single-source shorthand and multi-source
+  list shape both parse, though Phase 1 only exercises single-source).
+- `markdown` adapter:
+  - reads files under a configured root (path-traversal blocked)
+  - splits by H2 headings, classifies each section by config selectors
+  - `rules` sections → one `rule` per bullet, severity from `MUST/SHOULD/MAY`
+    prefix or per-section default
+  - `reasoning` sections → one `reasoning` per section
+  - `skills` sections → one `skill` per H3 sub-heading (name + body)
+  - `commands` sections → one `command` per H3 (name + fenced-block invocation
+    + surrounding description)
+- Resolver: per-topic in-memory TTL cache; binds caches across all four kinds.
+- Resources: `context://list`, `context://<topic>`.
+- Tools: `get_context`, `get_rules`, `get_reasoning`, `get_skills`,
+  `get_commands`, `list_topics`, `source_health`.
+- Health endpoint for each configured source.
+
+Out of scope (deferred):
+- Adapters beyond markdown.
+- Cross-source merge semantics (precedence, dedup, conflict resolution).
+- Persistent cache.
+- Write operations.
+- Semantic search across topics.
+
+**Definition of done:**
+- Agent configured with this server can call `get_rules("deploy-policy")` and
+  receive bullet-classified rule objects with severities from a repo-local
+  markdown file.
+- `get_reasoning("deploy-policy")` returns the reasoning section.
+- `get_skills("release-playbook")` returns each `### …` procedure as a Skill.
+- `get_commands("release-playbook")` returns each `### name` + fenced-block
+  pair as a Command with `invocation` and `description` fields.
+- `get_context(topic)` returns all four lists in one envelope.
+- `context://list` shows all configured topics with descriptions.
+- Missing file, escape from root, or malformed classifier emits an explicit
+  error (no silent empty result).
+
+---
+
+## Phase 2+ — external adapters
+
+Ordered by likely user demand. Each adapter must implement classifiers for
+some subset of `rules | reasoning | skills | commands`.
+
+| Adapter | Rules | Reasoning | Skills | Commands |
+|---|---|---|---|---|
+| Confluence | runbooks, security/deploy policies | architecture docs, ADRs, RFCs | runbook procedures | curated CLI snippets in docs |
+| Notion | team agreements, OKRs as constraints | wiki pages, project briefs | onboarding playbooks | named recipes pages |
+| Jira | exit criteria, DoD checklists | sprint goal, in-flight tickets | how-to descriptions on tickets | — |
+| GitHub | CODEOWNERS, branch protection, required checks | recent PRs, release notes | repo runbook files | scripts in `scripts/`, gh-cli recipes |
+| Linear | (alt to Jira) | (alt to Jira) | (alt to Jira) | — |
+| Slack | pinned channel rules | recent discussion (read-only, time-bounded) | — | — |
+
+Multi-source topics (one topic fanning out to 2+ adapters, merged by the
+resolver) land in Phase 2 alongside the first external adapter.
+
+---
+
+## Open design questions
+
+Explicit deferrals. Each closes before the relevant phase ships.
+
+1. **Rule conflict resolution.** Two sources contribute conflicting rules
+   (`must X` vs `must not X`). Surface both? Highest-severity wins? Source
+   priority order in config? Decide before Phase 2.
+2. **Auth strategy.** Per-source env vars are simplest. Worth integrating with
+   macOS Keychain / 1Password CLI later? Decide before Phase 2.
+3. **Caching backend.** In-memory is fine for Phase 1. Persistent cache
+   (sqlite?) becomes relevant if startup latency or rate limits bite.
+4. **Classifier strength.** Heading/tag selectors are crude. Do we need a richer
+   DSL (XPath, frontmatter, structured annotations)? Wait for real misclassification
+   pain before adding complexity.
+5. **One server per repo, or one server multi-tenant.** Phase 1 assumes one
+   process per consuming repo. Multi-tenant adds real complexity; revisit only
+   with concrete demand.
+6. **Proactive rule injection.** Should the host stitch `must`-severity rules
+   into the system prompt at session start, or always rely on the agent calling
+   `get_rules`? Phase 1: tool-call only. Re-open after real-world use.
+7. **Write operations.** Should any adapter ever write (comment on a ticket,
+   update a page)? Default: no, keep read-only. Re-open only with a clear case.
+
+---
+
+## Project layout (planned)
+
+```
+keystone-mcp/
+├── pyproject.toml
+├── PLAN.md
+├── README.md
+├── src/
+│   └── keystone_mcp/
+│       ├── __init__.py
+│       ├── server.py            # FastMCP entrypoint
+│       ├── config.py            # YAML loader + topic registry
+│       ├── resolver.py          # topic → adapter dispatch, rule/reasoning split
+│       ├── payload.py           # ContextDoc, envelope shape
+│       ├── cache.py             # in-memory TTL cache
+│       └── adapters/
+│           ├── __init__.py
+│           ├── base.py          # Adapter protocol + classifier interface
+│           └── markdown.py      # Phase 1
+└── tests/
+    ├── test_config.py
+    ├── test_resolver.py
+    ├── test_payload.py
+    └── adapters/
+        └── test_markdown.py
+```

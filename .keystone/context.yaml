@@ -1,0 +1,51 @@
+sources:
+  docs:
+    type: markdown
+    root: .keystone/context/
+
+topics:
+  deploy-policy:
+    description: |
+      Rules and context for production deploys. Read before any change touching
+      deploy scripts, CI config, or release tooling.
+    sources:
+      - source: docs
+        query: { file: deploy-policy.md }
+        classify:
+          rules: { heading: "Rules", severity: must }
+          reasoning: { heading: "Background" }
+    cache: 15m
+
+  module-ownership:
+    description: |
+      Who owns each module and how to reach them. Read when choosing reviewers
+      or asking design questions.
+    sources:
+      - source: docs
+        query: { file: owners.md }
+        classify:
+          rules: { heading: "Required reviewers" }
+          reasoning: { heading: "Contacts" }
+    tags: [people]
+
+  coding-standards:
+    description: |
+      House coding standards. Read when adding new modules or refactoring.
+    sources:
+      - source: docs
+        query: { file: coding-standards.md }
+        classify:
+          rules: { heading: "Standards", severity: should }
+          reasoning: { heading: "Rationale" }
+
+  release-playbook:
+    description: |
+      Procedures and canned commands for cutting a release. Read before tagging
+      or publishing.
+    sources:
+      - source: docs
+        query: { file: release-playbook.md }
+        classify:
+          rules:    { heading: "Rules" }
+          skills:   { heading: "Procedures" }
+          commands: { heading: "Commands" }
