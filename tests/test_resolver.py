@@ -110,6 +110,55 @@ async def test_health_for_markdown(resolver):
     assert h["source"] == "markdown"
 
 
+async def test_multi_source_merges_and_dedupes_rules(tmp_path):
+    ctx = tmp_path / "ctx"
+    ctx.mkdir()
+    (ctx / "a.md").write_text(
+        """## Rules
+
+- MUST pass CI.
+- SHOULD lint.
+"""
+    )
+    (ctx / "b.md").write_text(
+        """## Rules
+
+- SHOULD pass CI.
+- MUST review.
+"""
+    )
+    cfg_path = tmp_path / "context.yaml"
+    cfg_path.write_text(
+        f"""
+sources:
+  docs:
+    type: markdown
+    root: {ctx}
+topics:
+  combined:
+    description: combined
+    sources:
+      - source: docs
+        query: {{ file: a.md }}
+        classify:
+          rules: {{ heading: Rules }}
+      - source: docs
+        query: {{ file: b.md }}
+        classify:
+          rules: {{ heading: Rules }}
+"""
+    )
+    cfg = load_config(cfg_path)
+    r = Resolver(cfg)
+    env = await r.get_context("combined")
+    texts = sorted(rule.text for rule in env.rules)
+    # "pass CI." appears in both, MUST wins over SHOULD → single entry
+    assert texts == ["lint.", "pass CI.", "review."]
+    pass_ci = next(rule for rule in env.rules if rule.text == "pass CI.")
+    assert pass_ci.severity == "must"
+    assert "a.md" in pass_ci.source  # the MUST one came from a.md
+
+
 async def test_get_skills_and_commands(tmp_path):
     ctx = tmp_path / "ctx"
     ctx.mkdir()

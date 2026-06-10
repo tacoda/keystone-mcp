@@ -122,6 +122,41 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+_SEVERITY_RANK: dict[str, int] = {"may": 0, "should": 1, "must": 2}
+
+
+def _norm_rule_text(text: str) -> str:
+    return " ".join(text.lower().strip().split())
+
+
+def merge_rules(rules: list[Rule]) -> list[Rule]:
+    """Dedup rules by normalized text. Highest severity wins; ties keep all.
+
+    Two rules whose `text` normalizes to the same string are treated as the
+    same rule expressed by different sources. The highest severity in the
+    group wins and is emitted as-is; lower-severity duplicates are dropped.
+    On a tie at the top severity, all tied rules are kept so the agent can
+    cite both sources.
+    """
+    by_key: dict[str, list[Rule]] = {}
+    order: list[str] = []
+    for r in rules:
+        k = _norm_rule_text(r.text)
+        if k not in by_key:
+            order.append(k)
+            by_key[k] = []
+        by_key[k].append(r)
+    out: list[Rule] = []
+    for k in order:
+        group = by_key[k]
+        if len(group) == 1:
+            out.append(group[0])
+            continue
+        top = max(_SEVERITY_RANK[r.severity] for r in group)
+        out.extend(r for r in group if _SEVERITY_RANK[r.severity] == top)
+    return out
+
+
 def docs_to_envelope(topic: str, docs: list[ContextDoc]) -> ContextEnvelope:
     rules: list[Rule] = []
     reasoning: list[Reasoning] = []

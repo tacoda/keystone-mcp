@@ -1,11 +1,13 @@
+import asyncio
 from typing import Any
 
 from .adapters.base import Adapter
+from .adapters.github import GitHubAdapter
 from .adapters.markdown import MarkdownAdapter
 from .cache import TTLCache, make_key, parse_ttl
 from .config import KeystoneConfig, SourceConfig, TopicConfig
 from .errors import ConfigError, UnknownSourceError, UnknownTopicError
-from .payload import ContextDoc, ContextEnvelope, docs_to_envelope
+from .payload import ContextDoc, ContextEnvelope, docs_to_envelope, merge_rules
 
 
 def _build_markdown(source: SourceConfig) -> MarkdownAdapter:
@@ -16,8 +18,23 @@ def _build_markdown(source: SourceConfig) -> MarkdownAdapter:
     return MarkdownAdapter(root=root)
 
 
+def _build_github(source: SourceConfig) -> GitHubAdapter:
+    s = source.settings
+    token = s.get("auth")
+    if not token:
+        raise ConfigError(
+            f"source {source.name!r}: github adapter requires 'auth' (token)"
+        )
+    return GitHubAdapter(
+        token=token,
+        default_repo=s.get("repo"),
+        base_url=s.get("base_url", "https://api.github.com"),
+    )
+
+
 _BUILDERS = {
     "markdown": _build_markdown,
+    "github": _build_github,
 }
 
 
@@ -80,11 +97,17 @@ class Resolver:
             if cached is not None:
                 cached.cache_hit = True
                 return cached
-        docs: list[ContextDoc] = []
-        for binding in topic.bindings:
+        # Fan out across bindings in parallel. Any adapter failure surfaces
+        # rather than silently producing a partial envelope.
+        async def _one(binding) -> list[ContextDoc]:
             adapter = self._adapter_for(binding.source)
-            docs.extend(await adapter.fetch(binding.query, binding.classify))
+            return await adapter.fetch(binding.query, binding.classify)
+
+        results = await asyncio.gather(*(_one(b) for b in topic.bindings))
+        docs: list[ContextDoc] = [d for chunk in results for d in chunk]
         envelope = docs_to_envelope(slug, docs)
+        # Dedup rules across sources: highest severity wins; ties keep all.
+        envelope.rules = merge_rules(envelope.rules)
         if ttl is not None:
             self._cache.put(cache_key, envelope, ttl)
         return envelope

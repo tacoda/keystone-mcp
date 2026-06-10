@@ -3,6 +3,12 @@ sources:
     type: markdown
     root: .keystone/context/
 
+  # Uncomment when GITHUB_TOKEN is set in the environment.
+  # gh:
+  #   type: github
+  #   repo: tacoda/keystone-mcp
+  #   auth: env:GITHUB_TOKEN
+
 topics:
   deploy-policy:
     description: |
@@ -49,3 +55,21 @@ topics:
           rules:    { heading: "Rules" }
           skills:   { heading: "Procedures" }
           commands: { heading: "Commands" }
+
+  # Example multi-source topic combining local docs with live GitHub state.
+  # Enable once the `gh` source is uncommented above.
+  # repo-policy:
+  #   description: |
+  #     Combined ownership and branch-protection rules for this repo.
+  #   sources:
+  #     - source: docs
+  #       query: { file: owners.md }
+  #       classify:
+  #         rules: { heading: "Required reviewers" }
+  #     - source: gh
+  #       query: { type: codeowners }
+  #     - source: gh
+  #       query: { type: branch_protection, branch: main }
+  #     - source: gh
+  #       query: { type: recent_prs, limit: 5 }
+  #   cache: 5m

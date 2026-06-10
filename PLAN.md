@@ -340,22 +340,44 @@ Out of scope (deferred):
 
 ---
 
-## Phase 2+ — external adapters
+## Phase 2 — GitHub adapter + multi-source merge (shipped)
 
-Ordered by likely user demand. Each adapter must implement classifiers for
-some subset of `rules | reasoning | skills | commands`.
+**Goal:** prove the broker against a real external API and enable cross-source
+topics. Closes the open question on rule conflict resolution.
+
+Shipped:
+- `github` adapter (`adapters/github.py`) using httpx + PAT auth (`env:GITHUB_TOKEN`).
+  Query types:
+  - `codeowners` → rules (one rule per CODEOWNERS pattern, severity configurable
+    via `classify.rules.severity`)
+  - `branch_protection` → rules (review count, code-owner reqs, status checks,
+    linear history, force-push policy, admin enforcement). Default branch
+    resolved automatically when omitted.
+  - `recent_prs` → reasoning (PR number, title, author, state, draft flag,
+    `updated_at` as `recency`)
+  - `releases` → reasoning (tag, name, published_at, body)
+  - Health endpoint reports `core` rate-limit remaining/reset.
+- Multi-source topics: resolver fans out across all bindings concurrently via
+  `asyncio.gather`. One failed adapter call surfaces as an error rather than
+  emitting a partial envelope.
+- Rule merge policy: duplicates by normalized text → **highest severity wins**;
+  ties at the top severity → all tied rules kept (so both sources stay cited).
+  Reasoning, skills, and commands are not deduped — they're additive.
+- Tests: 21 new (`tests/adapters/test_github.py`, `tests/test_payload.py`, plus
+  multi-source case in `tests/test_resolver.py`). Total: 55 passing.
+
+## Phase 3+ — additional adapters
+
+Ordered by likely user demand. Each must implement classifiers for some subset
+of `rules | reasoning | skills | commands`.
 
 | Adapter | Rules | Reasoning | Skills | Commands |
 |---|---|---|---|---|
 | Confluence | runbooks, security/deploy policies | architecture docs, ADRs, RFCs | runbook procedures | curated CLI snippets in docs |
 | Notion | team agreements, OKRs as constraints | wiki pages, project briefs | onboarding playbooks | named recipes pages |
 | Jira | exit criteria, DoD checklists | sprint goal, in-flight tickets | how-to descriptions on tickets | — |
-| GitHub | CODEOWNERS, branch protection, required checks | recent PRs, release notes | repo runbook files | scripts in `scripts/`, gh-cli recipes |
 | Linear | (alt to Jira) | (alt to Jira) | (alt to Jira) | — |
 | Slack | pinned channel rules | recent discussion (read-only, time-bounded) | — | — |
-
-Multi-source topics (one topic fanning out to 2+ adapters, merged by the
-resolver) land in Phase 2 alongside the first external adapter.
 
 ---
 
@@ -363,9 +385,10 @@ resolver) land in Phase 2 alongside the first external adapter.
 
 Explicit deferrals. Each closes before the relevant phase ships.
 
-1. **Rule conflict resolution.** Two sources contribute conflicting rules
-   (`must X` vs `must not X`). Surface both? Highest-severity wins? Source
-   priority order in config? Decide before Phase 2.
+1. ~~**Rule conflict resolution.**~~ **Closed in Phase 2.** Duplicates
+   (identical normalized text) collapse with highest-severity winning; ties at
+   the top severity keep both sources. True semantic contradictions can't be
+   detected mechanically and surface as separate rules for the agent to flag.
 2. **Auth strategy.** Per-source env vars are simplest. Worth integrating with
    macOS Keychain / 1Password CLI later? Decide before Phase 2.
 3. **Caching backend.** In-memory is fine for Phase 1. Persistent cache
@@ -384,29 +407,36 @@ Explicit deferrals. Each closes before the relevant phase ships.
 
 ---
 
-## Project layout (planned)
+## Project layout
 
 ```
 keystone-mcp/
 ├── pyproject.toml
 ├── PLAN.md
 ├── README.md
+├── .keystone/
+│   ├── context.yaml             # repo-owned topic map
+│   └── context/                 # markdown source files
 ├── src/
 │   └── keystone_mcp/
 │       ├── __init__.py
 │       ├── server.py            # FastMCP entrypoint
 │       ├── config.py            # YAML loader + topic registry
-│       ├── resolver.py          # topic → adapter dispatch, rule/reasoning split
-│       ├── payload.py           # ContextDoc, envelope shape
+│       ├── resolver.py          # multi-source dispatch + rule merge
+│       ├── payload.py           # Rule/Reasoning/Skill/Command + envelope + merge_rules
 │       ├── cache.py             # in-memory TTL cache
+│       ├── errors.py            # typed boundary errors
 │       └── adapters/
 │           ├── __init__.py
-│           ├── base.py          # Adapter protocol + classifier interface
-│           └── markdown.py      # Phase 1
+│           ├── base.py          # Adapter protocol
+│           ├── markdown.py      # Phase 1
+│           └── github.py        # Phase 2
 └── tests/
     ├── test_config.py
     ├── test_resolver.py
     ├── test_payload.py
+    ├── test_cache.py
     └── adapters/
-        └── test_markdown.py
+        ├── test_markdown.py
+        └── test_github.py
 ```
