@@ -6,6 +6,7 @@ from fastmcp import FastMCP
 
 from .config import load_config
 from .errors import KeystoneError
+from .harness_scaffold import Scaffold, options_catalog
 from .resolver import Resolver
 
 INSTRUCTIONS = """
@@ -80,6 +81,103 @@ def build_server() -> FastMCP:
     async def context_resource(topic: str) -> str:
         env = await resolver.get_context(topic)
         return json.dumps(env.to_dict(), indent=2, default=str)
+
+    # Harness scaffold tools (Phase 11b) ----------------------------------
+
+    @mcp.tool
+    async def harness_bootstrap(root: str = "harness") -> dict:
+        """Create the skeleton directory layout under the harness root.
+
+        Idempotent — existing subdirs are reported in `skipped`. Call this
+        once per project before scaffolding individual guides / sensors /
+        actions / playbooks.
+        """
+        return Scaffold(root).bootstrap()
+
+    @mcp.tool
+    async def harness_new_guide(
+        name: str,
+        tier: str = "rules",
+        root: str = "harness",
+        force: bool = False,
+    ) -> dict:
+        """Scaffold a new guide markdown file.
+
+        `tier` ∈ iron-law | rules | golden. Tier determines the section
+        heading and default severity of bullets inside it.
+        """
+        return Scaffold(root).new_guide(name, tier=tier, force=force)
+
+    @mcp.tool
+    async def harness_new_sensor(
+        name: str,
+        kind: str = "custom",
+        root: str = "harness",
+        force: bool = False,
+    ) -> dict:
+        """Scaffold a new sensor markdown file.
+
+        `kind` ∈ lint | type | test | build | drift | coverage |
+        computational | domain | custom. Sensors describe automated checks;
+        the actual invocation lives in project state.
+        """
+        return Scaffold(root).new_sensor(name, kind=kind, force=force)
+
+    @mcp.tool
+    async def harness_new_action(
+        name: str, root: str = "harness", force: bool = False
+    ) -> dict:
+        """Scaffold a new action markdown file (single unit of lifecycle work)."""
+        return Scaffold(root).new_action(name, force=force)
+
+    @mcp.tool
+    async def harness_new_playbook(
+        name: str,
+        actions: list[str] | None = None,
+        root: str = "harness",
+        force: bool = False,
+    ) -> dict:
+        """Scaffold a new playbook markdown file (ordered action chain).
+
+        `actions` is an optional list of action names already present under
+        `<root>/actions/`. Each becomes a numbered step in the playbook.
+        """
+        return Scaffold(root).new_playbook(
+            name, actions=actions, force=force
+        )
+
+    @mcp.tool
+    async def harness_new_adapter(
+        agent: str, root: str = "harness", force: bool = False
+    ) -> dict:
+        """Scaffold a per-agent adapter directory under `<root>/adapters/<agent>/`."""
+        return Scaffold(root).new_adapter(agent, force=force)
+
+    @mcp.tool
+    async def harness_target_add(
+        agent: str,
+        project_root: str = ".",
+        root: str = "harness",
+        force: bool = False,
+    ) -> dict:
+        """Install the agent's menu file(s) at the project root.
+
+        Menu files (CLAUDE.md, AGENTS.md, etc.) point the agent at the
+        harness and at this MCP server. They are thin pointers, not content.
+        """
+        return Scaffold(root).target_add(
+            agent, project_root=project_root, force=force
+        )
+
+    @mcp.tool
+    async def harness_status(root: str = "harness") -> dict:
+        """Audit the harness layout: which subdirs exist and how many files in each."""
+        return Scaffold(root).status()
+
+    @mcp.tool
+    async def harness_options_catalog() -> dict:
+        """List valid arguments for the harness scaffold tools."""
+        return options_catalog()
 
     return mcp
 

@@ -578,26 +578,65 @@ Shipped:
   - Health endpoint reports which subdirs are present.
 - 17 new tests (`tests/adapters/test_harness.py`). Total: 188.
 
-Phase 11b (scaffold + manage tools) is next: `bootstrap_harness`,
-`new_guide`, `new_sensor`, `new_action`, `new_playbook`, `new_adapter`,
-`target_add`, `harness_status`. Templates copied from keystone's
-`internal/framework/scaffold/templates/harness/`.
-
 Plugins / `keystone patch` / `keystone verify` are intentionally dropped —
 MCP supplies live cross-project context in their place.
 
+## Phase 11b — harness scaffold MCP tools (shipped)
+
+**Goal:** absorb keystone CLI's write surface (`init`, `new <port>`,
+`target add`, `doctor`) into MCP tools so the agent can drive scaffolding.
+
+Shipped:
+- `src/keystone_mcp/harness_scaffold.py` — pure-Python `Scaffold` class
+  with templates as inline strings. Refuse-to-overwrite by default;
+  `force=True` opt-in. Every write returns `{created: [...], skipped: [...]}`.
+- 9 new MCP tools wired into the server:
+  - `harness_bootstrap(root)` — skeleton dirs (`guides/`, `corpus/`,
+    `corpus/state/`, `actions/`, `playbooks/`, `sensors/`, `adapters/`,
+    `learning/inbox/`, `archive/`). Idempotent.
+  - `harness_new_guide(name, tier)` — tier ∈ iron-law | rules | golden.
+  - `harness_new_sensor(name, kind)` — kind ∈ lint | type | test | build |
+    drift | coverage | computational | domain | custom. Stamps frontmatter
+    that the harness adapter reads at retrieval time.
+  - `harness_new_action(name)` — single unit of lifecycle work.
+  - `harness_new_playbook(name, actions[])` — ordered chain. References
+    each action via a relative markdown link.
+  - `harness_new_adapter(agent)` — adapter dir + README under
+    `<root>/adapters/<agent>/`.
+  - `harness_target_add(agent, project_root)` — agent menu file
+    (CLAUDE.md, AGENTS.md, `.cursor/rules/000-harness.mdc`, etc.) at the
+    project root. Menu is a thin pointer to the harness + MCP tools, not
+    content — single source of truth stays in the harness.
+  - `harness_status(root)` — per-subdir file counts.
+  - `harness_options_catalog()` — discovery: valid tiers, sensor kinds,
+    supported agents, menu file paths per agent.
+- Name validation rejects path-traversal / empty / punctuated names.
+- 29 new tests (`tests/test_harness_scaffold.py`). 217 total.
+
+Keystone CLI commands replaced by MCP tools:
+
+| Keystone CLI | MCP tool |
+|---|---|
+| `keystone init` | `harness_bootstrap` + `harness_target_add` |
+| `keystone new guide` | `harness_new_guide` |
+| `keystone new sensor` | `harness_new_sensor` |
+| `keystone new action` | `harness_new_action` |
+| `keystone new playbook` | `harness_new_playbook` |
+| `keystone new adapter` | `harness_new_adapter` |
+| `keystone target add` | `harness_target_add` |
+| `keystone doctor` (minus plugin checks) | `harness_status` |
+| `keystone options` | `harness_options_catalog` |
+| `keystone install` / `plugin *` / `patch` / `verify` | **dropped** — MCP serves live context in place of vendored plugins |
+
 ## Phase 12+ — remaining open work
 
-- **Phase 11b**: harness scaffold + manage tools (write-side MCP tools that
-  absorb keystone CLI's `init`, `new`, `target add`, `doctor` surface).
-- **Tools-vs-resources audit.** Some current tools likely belong as MCP
-  resources (`context://list`, `context://{topic}` already are; the narrow
-  getters and source-health may follow). Audit against FastMCP best
-  practice and migrate.
 - **Packaging.** Publish to PyPI and wire `uvx keystone-mcp` as the
   documented install path so consumers don't need to clone.
 - **Real-world smoke test.** Run against live Jira creds (and any others on
   hand) to catch real-API drift from the respx mocks.
+- **Action / playbook revisit.** Open question: collapse `actions` and
+  `playbooks` into the existing `skills` payload kind entirely, or keep
+  the distinction. Decide before adding more action/playbook surface.
 - **Secret-store auth** (open Q2). `env:NAME` works but forces secrets into
   shell rc files. Macos Keychain / 1Password CLI integration via a
   `secret:NAME` scheme that calls out at config-load time.
@@ -658,8 +697,9 @@ keystone-mcp/
 │       ├── config.py            # YAML loader + topic registry
 │       ├── resolver.py          # multi-source dispatch + rule merge
 │       ├── payload.py           # Rule/Reasoning/Skill/Command + envelope + merge_rules
-│       ├── cache.py             # in-memory TTL cache
+│       ├── cache.py             # in-memory TTL cache + sqlite backend
 │       ├── errors.py            # typed boundary errors
+│       ├── harness_scaffold.py  # write-side harness templates + Scaffold (Phase 11b)
 │       └── adapters/
 │           ├── __init__.py
 │           ├── base.py          # Adapter protocol
@@ -677,6 +717,7 @@ keystone-mcp/
     ├── test_resolver.py
     ├── test_payload.py
     ├── test_cache.py
+    ├── test_harness_scaffold.py
     └── adapters/
         ├── test_classify.py
         ├── test_markdown.py
