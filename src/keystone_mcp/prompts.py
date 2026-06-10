@@ -33,14 +33,14 @@ future sessions have ground truth to work from.
 
 ## Phases
 
-1. **Scaffold (if needed).** Call `harness_bootstrap`. Idempotent — safe
-   if the skeleton already exists.
+1. **Scaffold (if needed).** Call `keystone_harness_bootstrap`. Idempotent
+   — safe if the skeleton already exists.
 
 2. **Read existing context.** Read these resources:
-   - `harness://status` — what files already exist.
-   - `context://list` — which topics are configured.
+   - `keystone://harness/status` — what files already exist.
+   - `keystone://context/list` — which topics are configured.
    - For each existing topic that is harness-backed, read
-     `context://{topic}` so you start from current state, not zero.
+     `keystone://context/{topic}` so you start from current state, not zero.
 
 3. **Codebase scan.** Walk the repository. Identify:
    - Languages, frameworks, libraries (from manifests + entry points).
@@ -60,16 +60,16 @@ future sessions have ground truth to work from.
    - `traffic-topology.md` — entry points, dependencies, external calls.
 
    Use plain markdown writes (Edit / Write tools) for these state files —
-   they are not template-shaped and `harness_new_*` does not cover them.
+   they are not template-shaped and `keystone_new_*` does not cover them.
 
 5. **Iron-law guides.** Identify deploy / security / data-handling
    constraints that already exist (CI config, CODEOWNERS, deploy scripts,
    inline comments, README sections). For each, call
-   `harness_new_guide(name, tier="iron-law")` and fill in the body.
+   `keystone_new_guide(name, tier="iron-law")` and fill in the body.
 
 6. **Skills.** If the codebase has well-defined operations (release,
    rollback, migration steps), scaffold them with
-   `harness_new_skill(name, description=...)`. Body = the procedure.
+   `keystone_new_skill(name, description=...)`. Body = the procedure.
 
 7. **Report.** Summarize: ledgers written, guides created, skills
    scaffolded. Pause for user acceptance before any further changes.
@@ -104,14 +104,14 @@ each phase, **pause for explicit user acceptance** before moving on.
    Flag uncertainty. Save the spec inline in this conversation. Iron law:
    **No proceeding without explicit acceptance criteria.**
 
-2. **orient.** Read `harness://status` and the relevant
+2. **orient.** Read `keystone://harness/status` and the relevant
    `.keystone/harness/corpus/state/` ledgers (CODEBASE_STATE,
    code-debt, risk-fingerprints). Identify the idioms in the touched
    region. Sketch a plan. **Gate:** explicit user acceptance of the plan.
 
-3. **load rules.** Read `context://{{topic}}` for every topic relevant to
-   the change (or `context://list` if you need to discover). Note any
-   rules with severity `must` that apply.
+3. **load rules.** Read `keystone://context/{{topic}}` for every topic
+   relevant to the change (or `keystone://context/list` if you need to
+   discover). Note any rules with severity `must` that apply.
 
 4. **implement.** Make the changes inside the loaded idioms. Iron law:
    **Surgical edits only — touch what the spec requires.**
@@ -121,9 +121,10 @@ each phase, **pause for explicit user acceptance** before moving on.
    them configured.
 
 6. **verify.** Sensors are **blocking rules** — they MUST pass for this
-   phase to clear. Read `context://{{topic}}` for any topic backed by the
-   harness adapter `sensors` query (or read `harness://status` to
-   enumerate), then for each sensor look at its `invocation` field:
+   phase to clear. Read `keystone://context/{{topic}}` for any topic
+   backed by the harness adapter `sensors` query (or read
+   `keystone://harness/status` to enumerate), then for each sensor look
+   at its `invocation` field:
    - Ends in `.sh` → **computational sensor.** Run via Bash. Exit 0 =
      pass; non-zero = fail.
    - Ends in `.md` → **inferential sensor.** Read the prompt with the
@@ -172,11 +173,11 @@ parallel passes:
 ## Learning flywheel
 
 1. Walk `.keystone/harness/learning/inbox/`. For each entry, decide
-   whether to promote it to a guide (`harness_new_guide`) or skill
-   (`harness_new_skill`), park it for more evidence, or discard.
+   whether to promote it to a guide (`keystone_new_guide`) or skill
+   (`keystone_new_skill`), park it for more evidence, or discard.
 2. Read recent commits. Surface patterns that should become guides.
-3. Append new findings to the inbox via the `learn` prompt for the next
-   audit pass.
+3. Append new findings to the inbox via the `keystone_learn` prompt for
+   the next audit pass.
 
 ## Pruning flywheel
 
@@ -203,8 +204,8 @@ Then update the empirical state files in `corpus/state/`:
 
 A single audit report with two sections (Learn / Prune), each listing
 concrete proposed harness edits. **Propose every state-file diff before
-applying it; do not silently overwrite.** Read `harness://status` to
-ground claims about what currently exists.
+applying it; do not silently overwrite.** Read `keystone://harness/status`
+to ground claims about what currently exists.
 """
 
 
@@ -219,15 +220,15 @@ audit pass can decide whether to promote it to a guide or skill:
 
 ## Steps
 
-1. Read `harness://status` to confirm the inbox exists. If not, run
-   `harness_bootstrap` first.
+1. Read `keystone://harness/status` to confirm the inbox exists. If not,
+   run `keystone_harness_bootstrap` first.
 
 2. Classify the finding:
    - **Iron law** — a constraint that must always hold. Use
-     `harness_new_guide(name, tier="iron-law")` later.
+     `keystone_new_guide(name, tier="iron-law")` later.
    - **Rule / golden rule** — a normal or aspirational rule. Use
-     `harness_new_guide(name, tier="rules")` or `tier="golden"` later.
-   - **Skill** — a procedural how-to. Use `harness_new_skill(name)` later.
+     `keystone_new_guide(name, tier="rules")` or `tier="golden"` later.
+   - **Skill** — a procedural how-to. Use `keystone_new_skill(name)` later.
    - **Reasoning** — background fact / ADR. Goes in corpus, not inbox.
    - **Defer** — interesting but not actionable yet.
 

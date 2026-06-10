@@ -11,7 +11,7 @@ The agent treats each kind differently:
 - **commands** — canned invocations (shell commands, scripts, named recipes)
 
 Instead of cramming organizational context into every system prompt, the agent
-reads `context://{topic}` resources or calls `get_context(topic)` and the
+reads `keystone://context/{topic}` resources or calls `keystone_get_context(topic)` and the
 broker fans the request out to the right backing source.
 
 ## Status
@@ -111,8 +111,8 @@ directory; override with `KEYSTONE_CONFIG`.
    The team adopted these rules after a 2025 incident.
    ```
 
-3. Start the server. The agent now sees `deploy-policy` in `list_topics` and
-   can read `context://deploy-policy` to load the envelope.
+3. Start the server. The agent now sees `deploy-policy` in `keystone_list_topics`
+   and can read `keystone://context/deploy-policy` to load the envelope.
 
 The repo's own [`.keystone/context.yaml`](./.keystone/context.yaml) is a
 working example with topics for deploys, ownership, coding standards, and a
@@ -124,16 +124,16 @@ release playbook (plus commented-out examples of every external adapter).
 
 | Tool | Returns |
 |---|---|
-| `get_context(topic)` | full envelope (rules + reasoning + skills + commands) |
-| `list_topics(tag?)` | directory of configured topics |
-| `harness_bootstrap()` | scaffold the harness skeleton at `.keystone/harness/` |
-| `harness_new_guide(name, tier?)` | scaffold a new guide |
-| `harness_new_sensor(name, kind?, mode?)` | scaffold a sensor + matching script (computational) or prompt (inferential) |
-| `harness_new_script(name, body?)` | scaffold a sensor script (or ad-hoc shell script) |
-| `harness_new_prompt(name, body?)` | scaffold a sensor prompt (or ad-hoc prompt for inferential checks) |
-| `harness_new_skill(name, description?)` | scaffold `skills/<name>/SKILL.md` (FastMCP-native) |
-| `harness_new_adapter(agent)` | scaffold a per-agent adapter dir |
-| `harness_target_add(agent, project_root?)` | install agent menu file at project root |
+| `keystone_get_context(topic)` | full envelope (rules + reasoning + skills + commands) |
+| `keystone_list_topics(tag?)` | directory of configured topics |
+| `keystone_harness_bootstrap()` | scaffold the harness skeleton at `.keystone/harness/` |
+| `keystone_new_guide(name, tier?)` | scaffold a new guide |
+| `keystone_new_sensor(name, kind?, mode?)` | scaffold a sensor + matching script (computational) or prompt (inferential) |
+| `keystone_new_script(name, body?)` | scaffold a sensor script (or ad-hoc shell script) |
+| `keystone_new_prompt(name, body?)` | scaffold a sensor prompt (or ad-hoc prompt for inferential checks) |
+| `keystone_new_skill(name, description?)` | scaffold `skills/<name>/SKILL.md` (FastMCP-native; manager-authored skills are auto-prefixed `keystone-`) |
+| `keystone_new_adapter(agent)` | scaffold a per-agent adapter dir |
+| `keystone_target_add(agent, project_root?)` | install agent menu file at project root |
 
 ### Prompts
 
@@ -157,12 +157,11 @@ tools refuse to write files whose names look like secrets (`secret`, `token`,
 
 | URI | Purpose |
 |---|---|
-| `context://list` | configured topic directory |
-| `context://{topic}` | full envelope for one topic |
-| `source://{name}/health` | adapter reachability + auth state |
-| `harness://status` | harness layout audit (root=harness) |
-| `harness://{root}/status` | harness layout audit at a custom root |
-| `harness://options` | valid scaffold-tool arguments |
+| `keystone://context/list` | configured topic directory |
+| `keystone://context/{topic}` | full envelope for one topic |
+| `keystone://source/{name}/health` | adapter reachability + auth state |
+| `keystone://harness/status` | harness layout audit (root=harness) |
+| `keystone://harness/options` | valid scaffold-tool arguments |
 
 ### Envelope shape
 

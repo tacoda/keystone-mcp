@@ -256,15 +256,15 @@ _MENU_TEMPLATE = (
     "  3. **Rules** — regular rules; strong rules can override.\n\n"
     "Non-negotiable and strong rules are inlined below at write time so the\n"
     "agent sees them at session start. Regular rules and reasoning load on\n"
-    "demand via MCP. Re-run `harness_target_add(agent, force=True)` after\n"
+    "demand via MCP. Re-run `keystone_target_add(agent, force=True)` after\n"
     "editing guides to refresh this file.\n\n"
     "**At session time** — call the MCP server:\n"
-    "- `list_topics()` (tool) — discover configured topics.\n"
-    "- `get_context(topic)` (tool) — full envelope (rules + reasoning + skills + commands).\n"
-    "- `context://{{topic}}` (resource) — same envelope, via resource read.\n"
-    "- `source://{{name}}/health` (resource) — adapter reachability.\n"
-    "- `harness://status` / `harness://options` (resources) — harness layout audit.\n\n"
-    "Scaffold new harness files with the `harness_new_*` write tools. The\n"
+    "- `keystone_list_topics()` (tool) — discover configured topics.\n"
+    "- `keystone_get_context(topic)` (tool) — full envelope (rules + reasoning + skills + commands).\n"
+    "- `keystone://context/{{topic}}` (resource) — same envelope, via resource read.\n"
+    "- `keystone://source/{{name}}/health` (resource) — adapter reachability.\n"
+    "- `keystone://harness/status` / `keystone://harness/options` (resources) — harness layout audit.\n\n"
+    "Scaffold new harness files with the `keystone_new_*` write tools. The\n"
     "default root is `.keystone/harness`. See the keystone-mcp README for\n"
     "adapter and topic configuration.\n"
 )
@@ -590,7 +590,14 @@ class Scaffold:
         FastMCP's `SkillsDirectoryProvider` discovers one skill per
         subdirectory containing a `SKILL.md`. The agent runtime (Claude
         Code, Cursor, etc.) auto-loads these as skill resources.
+
+        Manager-authored skills carry the `keystone-` prefix so they
+        don't collide with project-authored or third-party skills under
+        the shared `skill://` resource scheme. If the caller passes a
+        bare slug (no `keystone-` prefix), the prefix is prepended.
         """
+        if not name.startswith("keystone-"):
+            name = f"keystone-{name}"
         _validate_name(name, "skill")
         path = self._root / "skills" / name / "SKILL.md"
         created, p = _write(

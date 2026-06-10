@@ -114,8 +114,8 @@ def test_render_adapter_readme_mentions_agent():
 def test_render_agent_menu_substitutes_harness_root():
     out = render_agent_menu(".keystone/harness")
     assert "`.keystone/harness/" in out
-    assert "get_context(topic)" in out
-    assert "context://" in out
+    assert "keystone_get_context(topic)" in out
+    assert "keystone://context/" in out
 
 
 def test_render_agent_menu_warns_about_secrets():
@@ -346,11 +346,12 @@ def test_new_skill_creates_subdir_with_SKILL_md(tmp_path):
     s.bootstrap()
     result = s.new_skill("cut-release", description="Cut a patch release")
     path = Path(result["created"][0])
-    assert path == s.root / "skills" / "cut-release" / "SKILL.md"
+    # Manager-authored skills are prefixed `keystone-` automatically.
+    assert path == s.root / "skills" / "keystone-cut-release" / "SKILL.md"
     body = path.read_text()
     assert body.startswith("---\n")
     assert "description: Cut a patch release" in body
-    assert "# cut-release" in body
+    assert "# keystone-cut-release" in body
 
 
 def test_new_skill_refuses_overwrite_without_force(tmp_path):
@@ -388,7 +389,7 @@ def test_target_add_writes_menu_file_at_project_root(tmp_path):
     path = Path(result["created"][0])
     assert path == project / "CLAUDE.md"
     body = path.read_text()
-    assert "get_context(topic)" in body
+    assert "keystone_get_context(topic)" in body
     assert "harness/" in body
     assert "Never put secrets" in body
 

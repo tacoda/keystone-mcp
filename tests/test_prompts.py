@@ -17,11 +17,11 @@ def test_bootstrap_mentions_state_ledger_paths():
 
 def test_bootstrap_references_mcp_tools_and_resources():
     out = render_bootstrap()
-    assert "harness_bootstrap" in out
-    assert "harness://status" in out
-    assert "context://list" in out
-    assert "harness_new_guide" in out
-    assert "harness_new_skill" in out
+    assert "keystone_harness_bootstrap" in out
+    assert "keystone://harness/status" in out
+    assert "keystone://context/list" in out
+    assert "keystone_new_guide" in out
+    assert "keystone_new_skill" in out
 
 
 def test_bootstrap_includes_no_secrets_iron_law():

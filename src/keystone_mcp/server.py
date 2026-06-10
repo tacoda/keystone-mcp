@@ -22,35 +22,41 @@ from .resolver import Resolver
 HARNESS_ROOT = ".keystone/harness"
 
 INSTRUCTIONS = """
+Keystone Harness Manager — the end-to-end harness manager for any project.
+
 This server retrieves company context as four kinds of payload:
   - rules:     constraints to obey (severity must/should/may)
   - reasoning: background facts and intent
   - skills:    procedural how-to knowledge (multi-step playbooks)
   - commands:  canned invocations (shell commands, scripts, named recipes)
 
-Read-only retrieval is exposed as MCP resources:
-  - context://list                  directory of configured topics
-  - context://{topic}               full envelope for a topic
-  - source://{name}/health          adapter reachability + auth state
-  - harness://status                harness layout audit (always .keystone/harness)
-  - harness://options               valid scaffold-tool arguments
-  - skill://<name>/SKILL.md         project-local skill (FastMCP primitive)
-  - skill://<name>/_manifest        manifest of supporting files in the skill
+Every primitive carries a `keystone` namespace.
 
-Project-local skills live at `.keystone/harness/skills/<name>/SKILL.md`.
+Read-only retrieval is exposed as MCP resources, rooted at `keystone://`:
+  - keystone://context/list           directory of configured topics
+  - keystone://context/{topic}        full envelope for a topic
+  - keystone://source/{name}/health   adapter reachability + auth state
+  - keystone://harness/status         harness layout audit (always .keystone/harness)
+  - keystone://harness/options        valid scaffold-tool arguments
+  - skill://<name>/SKILL.md           project-local skill (FastMCP primitive)
+  - skill://<name>/_manifest          manifest of supporting files in the skill
+
+Project-local skills live at `.keystone/harness/skills/<name>/SKILL.md`
+and are named `keystone-<slug>` when authored by the manager itself.
 They are discovered automatically by FastMCP's SkillsDirectoryProvider —
 agent runtimes (Claude Code, Cursor, etc.) auto-load them.
 
-Tools cover parameterized retrieval and write operations:
-  - get_context(topic), list_topics(tag?)
-  - harness_bootstrap / harness_new_* / harness_target_add
+Tools (all `keystone_`-prefixed) cover parameterized retrieval and write
+operations:
+  - keystone_get_context(topic), keystone_list_topics(tag?)
+  - keystone_harness_bootstrap / keystone_new_* / keystone_target_add
 
-Prompts seed multi-step agent workflows:
-  - bootstrap     one-time codebase analysis + state ledger fill
-  - task(description)   end-to-end task: spec → orient → implement →
-                        check-drift → verify → review
-  - audit         dual-flywheel: learning + pruning
-  - learn(finding)      capture a finding into learning/inbox/
+Prompts (all `keystone_`-prefixed) seed multi-step agent workflows:
+  - keystone_bootstrap            one-time codebase analysis + state ledger fill
+  - keystone_task(description)    end-to-end task: spec → orient → implement →
+                                  check-drift → verify → review
+  - keystone_audit                dual-flywheel: learning + pruning
+  - keystone_learn(finding)       capture a finding into learning/inbox/
 
 The harness lives at `.keystone/harness` — fixed path, team-shared,
 version-controlled. Never put secrets there; use `env:VAR` references in
@@ -82,13 +88,13 @@ def build_server() -> FastMCP:
     # Tools: parameterized retrieval + write operations ------------------
 
     @mcp.tool
-    async def get_context(topic: str) -> dict:
+    async def keystone_get_context(topic: str) -> dict:
         """Full envelope (rules + reasoning + skills + commands) for a topic."""
         env = await resolver.get_context(topic)
         return env.to_dict()
 
     @mcp.tool
-    async def list_topics(tag: str | None = None) -> list[dict]:
+    async def keystone_list_topics(tag: str | None = None) -> list[dict]:
         """List configured topics. Pass `tag` to filter."""
         return resolver.list_topics(tag=tag)
 
@@ -96,24 +102,24 @@ def build_server() -> FastMCP:
 
     _READ_ONLY = {"readOnlyHint": True, "idempotentHint": True}
 
-    @mcp.resource("context://list", annotations=_READ_ONLY)
+    @mcp.resource("keystone://context/list", annotations=_READ_ONLY)
     async def context_list_resource() -> str:
         return json.dumps(resolver.list_topics(), indent=2)
 
-    @mcp.resource("context://{topic}", annotations=_READ_ONLY)
+    @mcp.resource("keystone://context/{topic}", annotations=_READ_ONLY)
     async def context_resource(topic: str) -> str:
         env = await resolver.get_context(topic)
         return json.dumps(env.to_dict(), indent=2, default=str)
 
-    @mcp.resource("source://{name}/health", annotations=_READ_ONLY)
+    @mcp.resource("keystone://source/{name}/health", annotations=_READ_ONLY)
     async def source_health_resource(name: str) -> str:
         return json.dumps(await resolver.health(name), indent=2)
 
-    @mcp.resource("harness://status", annotations=_READ_ONLY)
+    @mcp.resource("keystone://harness/status", annotations=_READ_ONLY)
     async def harness_status_resource() -> str:
         return json.dumps(Scaffold(HARNESS_ROOT).status(), indent=2)
 
-    @mcp.resource("harness://options", annotations=_READ_ONLY)
+    @mcp.resource("keystone://harness/options", annotations=_READ_ONLY)
     async def harness_options_resource() -> str:
         return json.dumps(options_catalog(), indent=2)
 
@@ -123,7 +129,7 @@ def build_server() -> FastMCP:
     # `.keystone/` directory is team-shared and version-controlled.
 
     @mcp.tool
-    async def harness_bootstrap() -> dict:
+    async def keystone_harness_bootstrap() -> dict:
         """Create the skeleton directory layout under `.keystone/harness`.
 
         Idempotent — existing subdirs are reported in `skipped`. Call this
@@ -133,20 +139,20 @@ def build_server() -> FastMCP:
         return Scaffold(HARNESS_ROOT).bootstrap()
 
     @mcp.tool
-    async def harness_new_guide(
+    async def keystone_new_guide(
         name: str, tier: str = "rules", force: bool = False
     ) -> dict:
         """Scaffold a new guide markdown file under `.keystone/harness/guides/`.
 
-        `tier` ∈ non-negotiable | strong | rules. Strictness cascade:
-        non-negotiable (can never be violated) > strong (hard rule;
-        deviation requires explicit reasoning) > rules (regular rule;
-        strong rules can override).
+        `tier` ∈ iron-law | golden | rules. Strictness cascade:
+        iron-law (can never be violated) > golden (hard rule; deviation
+        requires explicit reasoning) > rules (regular rule; golden rules
+        can override).
         """
         return Scaffold(HARNESS_ROOT).new_guide(name, tier=tier, force=force)
 
     @mcp.tool
-    async def harness_new_sensor(
+    async def keystone_new_sensor(
         name: str,
         kind: str = "custom",
         mode: str = "computational",
@@ -171,58 +177,58 @@ def build_server() -> FastMCP:
         )
 
     @mcp.tool
-    async def harness_new_script(
+    async def keystone_new_script(
         name: str, body: str | None = None, force: bool = False
     ) -> dict:
         """Scaffold a shell script under `.keystone/harness/scripts/<name>.sh`.
 
         Use this to drop a script body without a sensor wrapper, or to
         refresh an existing script (with `force=True`). New scripts are
-        chmod +x. Most projects scaffold sensors via `harness_new_sensor`
+        chmod +x. Most projects scaffold sensors via `keystone_new_sensor`
         which stamps the matching script automatically.
         """
         return Scaffold(HARNESS_ROOT).new_script(name, body=body, force=force)
 
     @mcp.tool
-    async def harness_new_prompt(
+    async def keystone_new_prompt(
         name: str, body: str | None = None, force: bool = False
     ) -> dict:
         """Scaffold a prompt markdown under `.keystone/harness/prompts/<name>.md`.
 
         Used by inferential sensors — the agent reads the prompt and
         performs the reasoning task it describes. Most projects scaffold
-        inferential sensors via `harness_new_sensor(mode="inferential")`
+        inferential sensors via `keystone_new_sensor(mode="inferential")`
         which stamps the matching prompt automatically.
         """
         return Scaffold(HARNESS_ROOT).new_prompt(name, body=body, force=force)
 
     @mcp.tool
-    async def harness_new_skill(
+    async def keystone_new_skill(
         name: str,
         description: str | None = None,
         force: bool = False,
     ) -> dict:
-        """Scaffold `<.keystone/harness/skills/<name>/SKILL.md`.
+        """Scaffold `.keystone/harness/skills/<name>/SKILL.md`.
 
         Skills are the FastMCP-native primitive for agent-discoverable
         procedural how-to. Each subdirectory containing a `SKILL.md` becomes
         a discoverable skill, surfaced as `skill://<name>/SKILL.md` and
         auto-loaded by agent runtimes (Claude Code, Cursor, etc.).
 
-        Replaces the older `actions/` and `playbooks/` directories from
-        Phase 11b — both concepts collapse into skills.
+        Manager-authored skills are named `keystone-<slug>`; the scaffolder
+        prepends `keystone-` if missing.
         """
         return Scaffold(HARNESS_ROOT).new_skill(
             name, description=description, force=force
         )
 
     @mcp.tool
-    async def harness_new_adapter(agent: str, force: bool = False) -> dict:
+    async def keystone_new_adapter(agent: str, force: bool = False) -> dict:
         """Scaffold a per-agent adapter directory under `.keystone/harness/adapters/<agent>/`."""
         return Scaffold(HARNESS_ROOT).new_adapter(agent, force=force)
 
     @mcp.tool
-    async def harness_target_add(
+    async def keystone_target_add(
         agent: str, project_root: str = ".", force: bool = False
     ) -> dict:
         """Install the agent's menu file(s) at the project root.
@@ -238,13 +244,13 @@ def build_server() -> FastMCP:
     # Lifecycle prompts (Phase 14b) --------------------------------------
 
     @mcp.prompt
-    def bootstrap() -> str:
+    def keystone_bootstrap() -> str:
         """Seed the bootstrap workflow: analyze the codebase and fill the
         project's state ledgers under `.keystone/harness/corpus/state/`."""
         return render_bootstrap()
 
     @mcp.prompt
-    def task(description: str) -> str:
+    def keystone_task(description: str) -> str:
         """Seed the task workflow on a unit of work.
 
         Walks spec → orient → implement → check-drift → verify → review.
@@ -253,12 +259,12 @@ def build_server() -> FastMCP:
         return render_task(description)
 
     @mcp.prompt
-    def audit() -> str:
+    def keystone_audit() -> str:
         """Seed the dual-flywheel audit: learning + pruning."""
         return render_audit()
 
     @mcp.prompt
-    def learn(finding: str) -> str:
+    def keystone_learn(finding: str) -> str:
         """Seed the learn workflow: capture a finding into learning/inbox/."""
         return render_learn(finding)
 
