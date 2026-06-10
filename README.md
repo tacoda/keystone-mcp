@@ -38,31 +38,30 @@ See [`PLAN.md`](./PLAN.md) for the full design and remaining open work.
 
 ## Install
 
-Until the package is published (Phase 11), clone and run from source:
+Published to PyPI as [`keystone-mcp`](https://pypi.org/project/keystone-mcp/).
 
 ```bash
-git clone tacoda_github:tacoda/keystone-mcp.git
+uvx keystone-mcp           # one-shot run
+pipx install keystone-mcp  # install + add to PATH
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/tacoda/keystone-mcp.git
 cd keystone-mcp
 uv sync
+uv run keystone-mcp        # console entry point
 ```
 
-Run the server:
-
-```bash
-uv run python -m keystone_mcp.server
-```
-
-Or wire it into a Claude Code project as an MCP server. Add to `.mcp.json`:
+Wire into a Claude Code (or any MCP host) project. Add to `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "keystone": {
-      "command": "uv",
-      "args": [
-        "--directory", "/path/to/keystone-mcp",
-        "run", "python", "-m", "keystone_mcp.server"
-      ],
+      "command": "uvx",
+      "args": ["keystone-mcp"],
       "env": {
         "KEYSTONE_CONFIG": "/path/to/your/project/.keystone/context.yaml"
       }

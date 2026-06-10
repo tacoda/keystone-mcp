@@ -937,6 +937,42 @@ Two-axis model now fully implemented:
   - (sensor, inferential) → command kind, .md invocation (Phase 14e)
   - (guide, computational) → out of harness scope (LSP configs in repo)
 
+## Phase 15 — packaging + PyPI release (shipped)
+
+**Goal:** publishable wheel + `uvx keystone-mcp` install path.
+
+Shipped:
+- `pyproject.toml`:
+  - `[project.scripts] keystone-mcp = "keystone_mcp.server:main"` — wires
+    the `keystone-mcp` console entry point.
+  - Author, MIT license, keywords, classifiers, project URLs.
+  - `build` added as a dev dep for sdist/wheel construction.
+- `LICENSE` (MIT, attributed to Ian Johnson).
+- `python -m build` produces both wheel and sdist cleanly.
+- Wheel smoke-tested: `uv run --with ./dist/...whl python -c "..."`
+  imports `keystone_mcp` and resolves `keystone_mcp.server:main` as the
+  entry point.
+- Published to PyPI at https://pypi.org/project/keystone-mcp/0.1.0/.
+
+Install path:
+```
+uvx keystone-mcp           # one-shot run
+pipx install keystone-mcp  # install + add to PATH
+```
+
+`.mcp.json` for a consumer no longer needs `--directory`:
+```json
+{
+  "mcpServers": {
+    "keystone": {
+      "command": "uvx",
+      "args": ["keystone-mcp"],
+      "env": { "KEYSTONE_CONFIG": "/path/to/.keystone/context.yaml" }
+    }
+  }
+}
+```
+
 ## Phase 12+ — remaining open work
 
 - **Packaging.** Publish to PyPI and wire `uvx keystone-mcp` as the
