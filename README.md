@@ -135,6 +135,18 @@ release playbook (plus commented-out examples of every external adapter).
 | `harness_new_adapter(agent)` | scaffold a per-agent adapter dir |
 | `harness_target_add(agent, project_root?)` | install agent menu file at project root |
 
+### Prompts
+
+Lifecycle workflows that seed multi-step agent conversations. The agent
+invokes a prompt, walks the phases, and calls scaffold tools along the way.
+
+| Prompt | Purpose |
+|---|---|
+| `bootstrap()` | one-time codebase analysis → fill state ledgers under `corpus/state/` |
+| `task(description)` | end-to-end work: spec → orient → implement → verify → review |
+| `audit()` | dual-flywheel: learning (capture) + pruning (retire stale) |
+| `learn(finding)` | capture a finding into `learning/inbox/` for batched promotion |
+
 All harness paths are fixed under `.keystone/harness/` — the `.keystone/`
 directory is team-shared and version-controlled. **Never put secrets there.**
 Reference them via `env:VAR` in `.keystone/context.yaml` instead. Scaffold

@@ -735,8 +735,48 @@ Shipped:
   population path, same conceptual category. Continues to surface through
   `context://{topic}` envelopes.
 
-Phases 14b/14c/14d to follow: lifecycle prompts, shipped scripts, proactive
-rule injection.
+## Phase 14b — lifecycle prompts (shipped)
+
+**Goal:** absorb keystone's lifecycle action/playbook content into FastMCP
+prompts. Each prompt seeds a multi-step agent conversation. Walking the
+phases drives the agent to call scaffold tools (`harness_new_*`) and read
+state resources (`harness://status`, `context://...`) along the way.
+
+Shipped:
+- New module `src/keystone_mcp/prompts.py` with four `render_*` functions.
+- Four `@mcp.prompt` decorators in `server.py`:
+  - `bootstrap()` — one-time codebase analysis. Walks the agent through
+    scaffold → read existing state → codebase scan → state ledger fills
+    (`CODEBASE_STATE.md`, `code-debt.md`, `risk-fingerprints.md`,
+    `quality-radar.md`, `traffic-topology.md`) → iron-law guides → skills.
+  - `task(description)` — end-to-end unit of work. Phase order: spec →
+    orient → load rules → implement → check-drift → verify → review (+
+    optional learn). Iron-law list, pacing-mode handling.
+  - `audit()` — dual-flywheel: learning (walk `learning/inbox/`, surface
+    new rule candidates from commits) + pruning (stale rules, dead idioms,
+    placeholders, failing sensors, empty shells, drifted state). Refresh
+    risk fingerprint + traffic topology in `corpus/state/`.
+  - `learn(finding)` — capture a finding into
+    `.keystone/harness/learning/inbox/<slug>.md` with proposed
+    classification (iron-law / rule / golden / skill / reasoning / defer).
+    No on-the-spot promotion — audit batches decisions.
+- Each prompt references MCP tools/resources by name so the agent knows
+  what to call. They do NOT inline guide/skill content — that lives in the
+  harness and is retrieved on demand at execution time.
+- Iron-law lines explicitly enumerated in every prompt:
+  - bootstrap → no silent overwrites, no invented facts, no secrets.
+  - task → no proceeding without acceptance criteria, no completion claims
+    without fresh verification, no commits with failing sensors, no AI
+    attribution, no silent overwrites.
+  - audit → propose every state-file diff before applying.
+  - learn → no invented evidence, no secrets in inbox.
+- 13 new tests (`tests/test_prompts.py`). Total: 248.
+
+Surface count: 8 tools, 3 static resources, 2 resource templates, 4
+prompts, plus N skill:// resources auto-discovered from
+`.keystone/harness/skills/`.
+
+Phases 14c (shipped scripts) and 14d (proactive rule injection) to follow.
 
 ## Phase 12+ — remaining open work
 

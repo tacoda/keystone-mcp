@@ -8,6 +8,12 @@ from fastmcp.server.providers.skills import SkillsDirectoryProvider
 from .config import load_config
 from .errors import KeystoneError
 from .harness_scaffold import Scaffold, options_catalog
+from .prompts import (
+    render_audit,
+    render_bootstrap,
+    render_learn,
+    render_task,
+)
 from .resolver import Resolver
 
 # The harness layout is fixed under `.keystone/harness`. The entire
@@ -38,6 +44,13 @@ agent runtimes (Claude Code, Cursor, etc.) auto-load them.
 Tools cover parameterized retrieval and write operations:
   - get_context(topic), list_topics(tag?)
   - harness_bootstrap / harness_new_* / harness_target_add
+
+Prompts seed multi-step agent workflows:
+  - bootstrap     one-time codebase analysis + state ledger fill
+  - task(description)   end-to-end task: spec → orient → implement →
+                        check-drift → verify → review
+  - audit         dual-flywheel: learning + pruning
+  - learn(finding)      capture a finding into learning/inbox/
 
 The harness lives at `.keystone/harness` — fixed path, team-shared,
 version-controlled. Never put secrets there; use `env:VAR` references in
@@ -180,6 +193,33 @@ def build_server() -> FastMCP:
         return Scaffold(HARNESS_ROOT).target_add(
             agent, project_root=project_root, force=force
         )
+
+    # Lifecycle prompts (Phase 14b) --------------------------------------
+
+    @mcp.prompt
+    def bootstrap() -> str:
+        """Seed the bootstrap workflow: analyze the codebase and fill the
+        project's state ledgers under `.keystone/harness/corpus/state/`."""
+        return render_bootstrap()
+
+    @mcp.prompt
+    def task(description: str) -> str:
+        """Seed the task workflow on a unit of work.
+
+        Walks spec → orient → implement → check-drift → verify → review.
+        Pause for explicit user acceptance between phases.
+        """
+        return render_task(description)
+
+    @mcp.prompt
+    def audit() -> str:
+        """Seed the dual-flywheel audit: learning + pruning."""
+        return render_audit()
+
+    @mcp.prompt
+    def learn(finding: str) -> str:
+        """Seed the learn workflow: capture a finding into learning/inbox/."""
+        return render_learn(finding)
 
     return mcp
 
