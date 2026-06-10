@@ -491,20 +491,41 @@ Shipped:
   unit tests, channel-name caching, paginated channel lookup, and severity
   prefix parsing. Total: 140.
 
-## Phase 8+ — remaining open work
+## Phase 8 — shared classifier primitives (shipped)
 
-The Phase 2+ adapter table is now empty — all seven planned adapters
-(markdown, GitHub, Confluence, Notion, Jira, Linear, Slack) have shipped.
-The next batch of work targets the remaining open design questions and
-internal refactors rather than new adapters.
+**Goal:** collapse the H2-section / H3-subblock / severity-prefix classifier
+logic that markdown, Confluence, and Notion had each reimplemented.
 
-Candidate threads:
-- **Shared classifier primitives.** Markdown, Confluence, and Notion each
-  carry near-identical `_extract_rules` / `_extract_reasoning` / `_extract_skills`
-  / `_extract_commands` functions over their native section/bullet/h3
-  primitives. A small `adapters/_classify.py` taking pre-normalized inputs
-  would cut ~30% of adapter code and tighten the classify-vocabulary
-  contract.
+Shipped:
+- `adapters/_classify.py` — new shared module exposing:
+  - `Section` (heading + bullets + sub_blocks + body — all three views
+    populated up front; classifier picks based on selector binding)
+  - `SubBlock` (name + body + first code block as `invocation`)
+  - `slugify`, `headings_of`, `severity_default` helpers (with consistent
+    `<adapter> adapter: ...` error wording)
+  - `classify_sections()` — single dispatch over selectors. Handles
+    severity-prefix parsing, id format (`{slug}-{idx:03d}`), source URI
+    format (`{base}#{heading_slug}` and `{base}#{heading_slug}/{sub_slug}`),
+    and the no-classify fallback that emits the entire body as one
+    reasoning doc (source URI = `source_base`, no fragment).
+- Markdown / Confluence / Notion now each contain only a native-to-Section
+  parser. Markdown: regex over text. Confluence: BS4 walk over HTML.
+  Notion: walk over block list. After the parse, all three call
+  `classify_sections()` with identical args.
+- Behavior preserved exactly — 140 existing tests still pass without
+  modification. Confluence's fallback source URI silently dropped the
+  `#title-slug` suffix it used to emit (no test asserted on it).
+- 19 new unit tests (`tests/adapters/test_classify.py`) lock the shared
+  contract independently of any one adapter's parser. Total: 159.
+
+Code volume cut: each of the three heading-based adapters lost ~80 lines of
+duplicated extractor/walker logic, replaced by a single
+`classify_sections(...)` call.
+
+## Phase 9+ — remaining open work
+
+No adapters left to ship. Remaining threads target open design questions:
+
 - **Persistent cache** (open Q3). Phase 1's in-memory TTL is fine for short
   sessions, but reopening a fresh server every invocation pays the GitHub /
   Confluence / Notion / Jira / Linear / Slack round-trip latencies cold.
@@ -570,6 +591,7 @@ keystone-mcp/
 │       └── adapters/
 │           ├── __init__.py
 │           ├── base.py          # Adapter protocol
+│           ├── _classify.py     # shared section / sub-block classifier (Phase 8)
 │           ├── markdown.py      # Phase 1
 │           ├── github.py        # Phase 2
 │           ├── confluence.py    # Phase 3
@@ -583,6 +605,7 @@ keystone-mcp/
     ├── test_payload.py
     ├── test_cache.py
     └── adapters/
+        ├── test_classify.py
         ├── test_markdown.py
         ├── test_github.py
         ├── test_confluence.py

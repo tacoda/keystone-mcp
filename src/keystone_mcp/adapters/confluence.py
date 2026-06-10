@@ -1,6 +1,8 @@
-"""Confluence adapter — Phase 3.
+"""Confluence adapter — Phase 3, refactored in Phase 8.
 
-Reads context from Confluence Cloud via REST API v2.
+Reads context from Confluence Cloud via REST API v2. The native HTML body is
+parsed once into the shared `Section` shape and handed to the shared
+classifier in `_classify.py`.
 
 Auth: basic (email + API token). Token from
 https://id.atlassian.com/manage-profile/security/api-tokens.
@@ -15,77 +17,22 @@ Query types:
     type: space_pages
         space: ENG
         limit: 50                    # default 50
-
-Output kinds:
-
-    page         → classified per `classify` block (rules/reasoning/skills/commands)
-                   parsed from the page's rendered HTML
-    space_pages  → reasoning, one per page (title + URL + updated_at as recency)
-
-`classify` vocabulary is the same as the markdown adapter:
-
-    classify:
-      rules:    { heading: "Rules", severity: must }
-      reasoning: { heading: "Background" }
-      skills:   { heading: "Procedures" }
-      commands: { heading: "Commands" }
-
-Sections are delimited by H2 headings. Inside skills/commands sections, each
-H3 sub-heading delimits one entry. For commands, the first `<pre>` or `<code>`
-block in the entry becomes the invocation; the remaining text becomes the
-description.
 """
 
 from __future__ import annotations
 
 import base64
-import re
 from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 from ..errors import AdapterError, AuthError
-from ..payload import ContextDoc, Severity
-
-
-_SEVERITY_PREFIX_RE = re.compile(r"^(MUST|SHOULD|MAY)\b[:.\s]*(.+)$", re.IGNORECASE)
-
-
-def _slugify(text: str) -> str:
-    out = re.sub(r"[^a-zA-Z0-9]+", "-", text.strip().lower()).strip("-")
-    return out or "section"
-
-
-def _headings_of(selector: dict[str, Any] | None) -> set[str]:
-    if not selector:
-        return set()
-    h = selector.get("heading")
-    if h is None:
-        return set()
-    if isinstance(h, str):
-        return {h.strip().lower()}
-    if isinstance(h, list):
-        return {str(x).strip().lower() for x in h}
-    raise AdapterError(
-        f"confluence adapter: classify.heading must be string or list, got {type(h).__name__}"
-    )
-
-
-def _severity_default(classify: dict[str, Any]) -> Severity:
-    rules = classify.get("rules")
-    if isinstance(rules, dict):
-        sev = rules.get("severity", "must")
-        if sev not in ("must", "should", "may"):
-            raise AdapterError(
-                f"confluence adapter: classify.rules.severity must be must|should|may, got {sev!r}"
-            )
-        return sev  # type: ignore[return-value]
-    return "must"
+from ..payload import ContextDoc
+from ._classify import Section, SubBlock, classify_sections
 
 
 def _between_siblings(start: Tag, stop_tags: tuple[str, ...]) -> list[Any]:
-    """Collect siblings after `start` until a tag in `stop_tags` (any level)."""
     out: list[Any] = []
     for sib in start.next_siblings:
         if isinstance(sib, Tag) and sib.name in stop_tags:
@@ -115,128 +62,55 @@ def _bullets_in(nodes: list[Any]) -> list[str]:
     return out
 
 
-def _h3_groups_in(nodes: list[Any]) -> list[tuple[str, list[Any]]]:
-    """Split a section's nodes by H3 headings → [(name, nodes_in_group), ...]."""
-    groups: list[tuple[str, list[Any]]] = []
+def _sub_blocks_in(nodes: list[Any]) -> list[SubBlock]:
+    blocks: list[SubBlock] = []
     current_name: str | None = None
     current: list[Any] = []
     for n in nodes:
         if isinstance(n, Tag) and n.name == "h3":
             if current_name is not None:
-                groups.append((current_name, current))
+                blocks.append(_sub_block(current_name, current))
             current_name = n.get_text(" ", strip=True)
             current = []
         else:
             if current_name is not None:
                 current.append(n)
     if current_name is not None:
-        groups.append((current_name, current))
-    return groups
+        blocks.append(_sub_block(current_name, current))
+    return blocks
 
 
-def _first_code_block(nodes: list[Any]) -> tuple[str | None, list[Any]]:
-    """Return (invocation, nodes_with_code_block_removed). Looks for <pre>/<code>."""
-    out: list[Any] = []
-    invocation: str | None = None
+def _sub_block(name: str, nodes: list[Any]) -> SubBlock:
+    code = ""
+    remaining: list[Any] = []
     for n in nodes:
-        if invocation is None and isinstance(n, Tag) and n.name in ("pre", "code"):
-            invocation = n.get_text("\n", strip=True)
+        if not code and isinstance(n, Tag) and n.name in ("pre", "code"):
+            code = n.get_text("\n", strip=True)
             continue
-        if invocation is None and isinstance(n, Tag):
+        if not code and isinstance(n, Tag):
             inner = n.find(["pre", "code"])
             if inner is not None:
-                invocation = inner.get_text("\n", strip=True)
+                code = inner.get_text("\n", strip=True)
                 inner.decompose()
-        out.append(n)
-    return invocation, out
+        remaining.append(n)
+    return SubBlock(name=name, body=_text_of(remaining), code=code)
 
 
-def _extract_rules(
-    section_nodes: list[Any],
-    *,
-    source_base: str,
-    heading_slug: str,
-    default_severity: Severity,
-) -> list[ContextDoc]:
-    out: list[ContextDoc] = []
-    idx = 0
-    for raw in _bullets_in(section_nodes):
-        text = raw.strip()
-        if not text:
-            continue
-        severity: Severity = default_severity
-        m = _SEVERITY_PREFIX_RE.match(text)
-        if m and m.group(1).lower() in ("must", "should", "may"):
-            severity = m.group(1).lower()  # type: ignore[assignment]
-            text = m.group(2).strip()
-        idx += 1
-        out.append(
-            ContextDoc(
-                kind="rule",
-                text=text,
-                source=f"{source_base}#{heading_slug}",
-                severity=severity,
-                id=f"{heading_slug}-{idx:03d}",
+def _parse_sections(html: str) -> tuple[list[Section], BeautifulSoup]:
+    soup = BeautifulSoup(html, "html.parser")
+    sections: list[Section] = []
+    for h2 in soup.find_all("h2"):
+        heading = h2.get_text(" ", strip=True)
+        nodes = _between_siblings(h2, stop_tags=("h2",))
+        sections.append(
+            Section(
+                heading=heading,
+                bullets=_bullets_in(nodes),
+                sub_blocks=_sub_blocks_in(nodes),
+                body=_text_of(nodes),
             )
         )
-    return out
-
-
-def _extract_reasoning(
-    section_nodes: list[Any], *, source_base: str, heading_slug: str
-) -> list[ContextDoc]:
-    text = _text_of(section_nodes)
-    if not text:
-        return []
-    return [
-        ContextDoc(
-            kind="reasoning", text=text, source=f"{source_base}#{heading_slug}"
-        )
-    ]
-
-
-def _extract_skills(
-    section_nodes: list[Any], *, source_base: str, heading_slug: str
-) -> list[ContextDoc]:
-    out: list[ContextDoc] = []
-    idx = 0
-    for name, group in _h3_groups_in(section_nodes):
-        body = _text_of(group)
-        idx += 1
-        sub_slug = _slugify(name)
-        out.append(
-            ContextDoc(
-                kind="skill",
-                text=body,
-                source=f"{source_base}#{heading_slug}/{sub_slug}",
-                name=name,
-                id=f"{heading_slug}-{idx:03d}",
-            )
-        )
-    return out
-
-
-def _extract_commands(
-    section_nodes: list[Any], *, source_base: str, heading_slug: str
-) -> list[ContextDoc]:
-    out: list[ContextDoc] = []
-    idx = 0
-    for name, group in _h3_groups_in(section_nodes):
-        invocation, remaining = _first_code_block(group)
-        description = _text_of(remaining)
-        idx += 1
-        sub_slug = _slugify(name)
-        out.append(
-            ContextDoc(
-                kind="command",
-                text=description,
-                source=f"{source_base}#{heading_slug}/{sub_slug}",
-                name=name,
-                invocation=invocation or "",
-                id=f"{heading_slug}-{idx:03d}",
-            )
-        )
-    return out
+    return sections, soup
 
 
 class ConfluenceAdapter:
@@ -351,78 +225,18 @@ class ConfluenceAdapter:
         page_id, page = await self._resolve_page(query)
         body = (page.get("body") or {}).get(query.get("body") or "view") or {}
         html = body.get("value", "")
-        title = page.get("title", "")
         source_base = f"confluence://{page_id}"
-
-        rule_headings = _headings_of(classify.get("rules"))
-        reasoning_headings = _headings_of(classify.get("reasoning"))
-        skill_headings = _headings_of(classify.get("skills"))
-        command_headings = _headings_of(classify.get("commands"))
-        reasoning_all = bool(
-            isinstance(classify.get("reasoning"), dict)
-            and classify["reasoning"].get("all")
-        )
-        default_severity = _severity_default(classify)
-
         if not html:
             return []
-
-        soup = BeautifulSoup(html, "html.parser")
-
-        anything = (
-            rule_headings
-            or reasoning_headings
-            or skill_headings
-            or command_headings
-            or reasoning_all
+        sections, soup = _parse_sections(html)
+        fallback = soup.get_text("\n", strip=True)
+        return classify_sections(
+            sections=sections,
+            source_base=source_base,
+            classify=classify,
+            adapter_name=self.name,
+            fallback_reasoning_body=fallback,
         )
-        if not anything:
-            text = soup.get_text("\n", strip=True)
-            if not text:
-                return []
-            return [
-                ContextDoc(
-                    kind="reasoning",
-                    text=text,
-                    source=f"{source_base}#{_slugify(title)}",
-                )
-            ]
-
-        docs: list[ContextDoc] = []
-        h2s = soup.find_all("h2")
-        for h2 in h2s:
-            heading = h2.get_text(" ", strip=True)
-            lower = heading.lower()
-            slug = _slugify(heading)
-            section = _between_siblings(h2, stop_tags=("h2",))
-            if lower in rule_headings:
-                docs.extend(
-                    _extract_rules(
-                        section,
-                        source_base=source_base,
-                        heading_slug=slug,
-                        default_severity=default_severity,
-                    )
-                )
-            elif lower in skill_headings:
-                docs.extend(
-                    _extract_skills(
-                        section, source_base=source_base, heading_slug=slug
-                    )
-                )
-            elif lower in command_headings:
-                docs.extend(
-                    _extract_commands(
-                        section, source_base=source_base, heading_slug=slug
-                    )
-                )
-            elif lower in reasoning_headings or reasoning_all:
-                docs.extend(
-                    _extract_reasoning(
-                        section, source_base=source_base, heading_slug=slug
-                    )
-                )
-        return docs
 
     async def _emit_space_pages(
         self, query: dict[str, Any]

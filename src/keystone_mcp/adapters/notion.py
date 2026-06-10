@@ -1,6 +1,8 @@
-"""Notion adapter — Phase 4.
+"""Notion adapter — Phase 4, refactored in Phase 8.
 
-Reads context from Notion via the public REST API.
+Reads context from Notion via the public REST API. The native block-list is
+walked once into the shared `Section` shape and handed to the shared
+classifier in `_classify.py`.
 
 Auth: integration token (`Authorization: Bearer <token>`). Token from
 https://www.notion.so/my-integrations. Pages and databases must be shared
@@ -14,75 +16,21 @@ Query types:
     type: database
         id: "<database-id>"
         limit: 50                    # default 50
-
-Output kinds:
-
-    page      → classified per `classify` block (rules/reasoning/skills/commands)
-                parsed from the page's top-level block children
-    database  → reasoning, one per row (title + page id + last_edited_time)
-
-`classify` selector vocabulary matches the markdown/confluence adapters:
-
-    classify:
-      rules:    { heading: "Rules", severity: must }
-      reasoning: { heading: "Background" }
-      skills:   { heading: "Procedures" }
-      commands: { heading: "Commands" }
-
-Section split is by `heading_2`; inside skills/commands sections, each
-`heading_3` delimits one entry. For commands, the first `code` block in the
-entry becomes the invocation; remaining text becomes the description.
-
-Phase 4 walks top-level children only — nested list items are flattened to
-their parent's text. Multi-page block listings are paginated.
 """
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 import httpx
 
 from ..errors import AdapterError, AuthError
-from ..payload import ContextDoc, Severity
+from ..payload import ContextDoc
+from ._classify import Section, SubBlock, classify_sections
 
 
 _NOTION_API = "https://api.notion.com/v1"
 _DEFAULT_VERSION = "2022-06-28"
-_SEVERITY_PREFIX_RE = re.compile(r"^(MUST|SHOULD|MAY)\b[:.\s]*(.+)$", re.IGNORECASE)
-
-
-def _slugify(text: str) -> str:
-    out = re.sub(r"[^a-zA-Z0-9]+", "-", text.strip().lower()).strip("-")
-    return out or "section"
-
-
-def _headings_of(selector: dict[str, Any] | None) -> set[str]:
-    if not selector:
-        return set()
-    h = selector.get("heading")
-    if h is None:
-        return set()
-    if isinstance(h, str):
-        return {h.strip().lower()}
-    if isinstance(h, list):
-        return {str(x).strip().lower() for x in h}
-    raise AdapterError(
-        f"notion adapter: classify.heading must be string or list, got {type(h).__name__}"
-    )
-
-
-def _severity_default(classify: dict[str, Any]) -> Severity:
-    rules = classify.get("rules")
-    if isinstance(rules, dict):
-        sev = rules.get("severity", "must")
-        if sev not in ("must", "should", "may"):
-            raise AdapterError(
-                f"notion adapter: classify.rules.severity must be must|should|may, got {sev!r}"
-            )
-        return sev  # type: ignore[return-value]
-    return "must"
 
 
 def _rich_text_plain(rich: list[dict[str, Any]] | None) -> str:
@@ -103,144 +51,80 @@ def _block_text(block: dict[str, Any]) -> str:
 
 
 def _blocks_to_text(blocks: list[dict[str, Any]]) -> str:
-    parts = [t for t in (_block_text(b) for b in blocks) if t]
-    return "\n".join(parts)
+    return "\n".join(t for t in (_block_text(b) for b in blocks) if t)
 
 
-def _split_by_h2(
-    blocks: list[dict[str, Any]],
-) -> list[tuple[str, list[dict[str, Any]]]]:
-    sections: list[tuple[str, list[dict[str, Any]]]] = []
-    current_name: str | None = None
-    current: list[dict[str, Any]] = []
+def _bullets_in(blocks: list[dict[str, Any]]) -> list[str]:
+    out: list[str] = []
     for b in blocks:
-        if b.get("type") == "heading_2":
-            if current_name is not None:
-                sections.append((current_name, current))
-            current_name = _rich_text_plain((b.get("heading_2") or {}).get("rich_text"))
-            current = []
-        else:
-            if current_name is not None:
-                current.append(b)
-    if current_name is not None:
-        sections.append((current_name, current))
-    return sections
+        if b.get("type") in ("bulleted_list_item", "numbered_list_item"):
+            t = _block_text(b).strip()
+            if t:
+                out.append(t)
+    return out
 
 
-def _split_by_h3(
-    blocks: list[dict[str, Any]],
-) -> list[tuple[str, list[dict[str, Any]]]]:
-    groups: list[tuple[str, list[dict[str, Any]]]] = []
+def _sub_blocks_in(blocks: list[dict[str, Any]]) -> list[SubBlock]:
+    out: list[SubBlock] = []
     current_name: str | None = None
     current: list[dict[str, Any]] = []
     for b in blocks:
         if b.get("type") == "heading_3":
             if current_name is not None:
-                groups.append((current_name, current))
-            current_name = _rich_text_plain((b.get("heading_3") or {}).get("rich_text"))
+                out.append(_sub_block(current_name, current))
+            current_name = _rich_text_plain(
+                (b.get("heading_3") or {}).get("rich_text")
+            )
             current = []
         else:
             if current_name is not None:
                 current.append(b)
     if current_name is not None:
-        groups.append((current_name, current))
-    return groups
+        out.append(_sub_block(current_name, current))
+    return out
 
 
-def _extract_rules(
-    section_blocks: list[dict[str, Any]],
-    *,
-    source_base: str,
-    heading_slug: str,
-    default_severity: Severity,
-) -> list[ContextDoc]:
-    out: list[ContextDoc] = []
-    idx = 0
-    for b in section_blocks:
-        if b.get("type") not in ("bulleted_list_item", "numbered_list_item"):
+def _sub_block(name: str, blocks: list[dict[str, Any]]) -> SubBlock:
+    code = ""
+    non_code: list[dict[str, Any]] = []
+    for b in blocks:
+        if not code and b.get("type") == "code":
+            code = _block_text(b).strip()
             continue
-        text = _block_text(b).strip()
-        if not text:
-            continue
-        severity: Severity = default_severity
-        m = _SEVERITY_PREFIX_RE.match(text)
-        if m and m.group(1).lower() in ("must", "should", "may"):
-            severity = m.group(1).lower()  # type: ignore[assignment]
-            text = m.group(2).strip()
-        idx += 1
-        out.append(
-            ContextDoc(
-                kind="rule",
-                text=text,
-                source=f"{source_base}#{heading_slug}",
-                severity=severity,
-                id=f"{heading_slug}-{idx:03d}",
+        non_code.append(b)
+    return SubBlock(name=name, body=_blocks_to_text(non_code), code=code)
+
+
+def _parse_sections(blocks: list[dict[str, Any]]) -> list[Section]:
+    sections: list[Section] = []
+    current_name: str | None = None
+    current: list[dict[str, Any]] = []
+
+    def flush() -> None:
+        nonlocal current_name, current
+        if current_name is None:
+            return
+        sections.append(
+            Section(
+                heading=current_name,
+                bullets=_bullets_in(current),
+                sub_blocks=_sub_blocks_in(current),
+                body=_blocks_to_text(current),
             )
         )
-    return out
 
-
-def _extract_reasoning(
-    section_blocks: list[dict[str, Any]], *, source_base: str, heading_slug: str
-) -> list[ContextDoc]:
-    text = _blocks_to_text(section_blocks)
-    if not text:
-        return []
-    return [
-        ContextDoc(
-            kind="reasoning", text=text, source=f"{source_base}#{heading_slug}"
-        )
-    ]
-
-
-def _extract_skills(
-    section_blocks: list[dict[str, Any]], *, source_base: str, heading_slug: str
-) -> list[ContextDoc]:
-    out: list[ContextDoc] = []
-    idx = 0
-    for name, group in _split_by_h3(section_blocks):
-        body = _blocks_to_text(group)
-        idx += 1
-        sub_slug = _slugify(name)
-        out.append(
-            ContextDoc(
-                kind="skill",
-                text=body,
-                source=f"{source_base}#{heading_slug}/{sub_slug}",
-                name=name,
-                id=f"{heading_slug}-{idx:03d}",
+    for b in blocks:
+        if b.get("type") == "heading_2":
+            flush()
+            current_name = _rich_text_plain(
+                (b.get("heading_2") or {}).get("rich_text")
             )
-        )
-    return out
-
-
-def _extract_commands(
-    section_blocks: list[dict[str, Any]], *, source_base: str, heading_slug: str
-) -> list[ContextDoc]:
-    out: list[ContextDoc] = []
-    idx = 0
-    for name, group in _split_by_h3(section_blocks):
-        invocation = ""
-        non_code: list[dict[str, Any]] = []
-        for b in group:
-            if not invocation and b.get("type") == "code":
-                invocation = _block_text(b).strip()
-                continue
-            non_code.append(b)
-        description = _blocks_to_text(non_code)
-        idx += 1
-        sub_slug = _slugify(name)
-        out.append(
-            ContextDoc(
-                kind="command",
-                text=description,
-                source=f"{source_base}#{heading_slug}/{sub_slug}",
-                name=name,
-                invocation=invocation,
-                id=f"{heading_slug}-{idx:03d}",
-            )
-        )
-    return out
+            current = []
+        else:
+            if current_name is not None:
+                current.append(b)
+    flush()
+    return sections
 
 
 def _title_from_properties(properties: dict[str, Any]) -> str:
@@ -371,66 +255,13 @@ class NotionAdapter:
         page_id = await self._resolve_page_id(query)
         blocks = await self._fetch_blocks(page_id)
         source_base = f"notion://{page_id}"
-
-        rule_h = _headings_of(classify.get("rules"))
-        reasoning_h = _headings_of(classify.get("reasoning"))
-        skill_h = _headings_of(classify.get("skills"))
-        command_h = _headings_of(classify.get("commands"))
-        reasoning_all = bool(
-            isinstance(classify.get("reasoning"), dict)
-            and classify["reasoning"].get("all")
+        return classify_sections(
+            sections=_parse_sections(blocks),
+            source_base=source_base,
+            classify=classify,
+            adapter_name=self.name,
+            fallback_reasoning_body=_blocks_to_text(blocks),
         )
-        default_severity = _severity_default(classify)
-
-        anything = (
-            rule_h or reasoning_h or skill_h or command_h or reasoning_all
-        )
-        if not anything:
-            text = _blocks_to_text(blocks)
-            if not text:
-                return []
-            return [
-                ContextDoc(kind="reasoning", text=text, source=source_base)
-            ]
-
-        docs: list[ContextDoc] = []
-        for heading, section_blocks in _split_by_h2(blocks):
-            lower = heading.lower()
-            slug = _slugify(heading)
-            if lower in rule_h:
-                docs.extend(
-                    _extract_rules(
-                        section_blocks,
-                        source_base=source_base,
-                        heading_slug=slug,
-                        default_severity=default_severity,
-                    )
-                )
-            elif lower in skill_h:
-                docs.extend(
-                    _extract_skills(
-                        section_blocks,
-                        source_base=source_base,
-                        heading_slug=slug,
-                    )
-                )
-            elif lower in command_h:
-                docs.extend(
-                    _extract_commands(
-                        section_blocks,
-                        source_base=source_base,
-                        heading_slug=slug,
-                    )
-                )
-            elif lower in reasoning_h or reasoning_all:
-                docs.extend(
-                    _extract_reasoning(
-                        section_blocks,
-                        source_base=source_base,
-                        heading_slug=slug,
-                    )
-                )
-        return docs
 
     async def _emit_database(self, query: dict[str, Any]) -> list[ContextDoc]:
         db_id = query.get("id")
