@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 from fastmcp import FastMCP
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
 
 from .config import load_config
 from .errors import KeystoneError
@@ -27,6 +28,12 @@ Read-only retrieval is exposed as MCP resources:
   - source://{name}/health          adapter reachability + auth state
   - harness://status                harness layout audit (always .keystone/harness)
   - harness://options               valid scaffold-tool arguments
+  - skill://<name>/SKILL.md         project-local skill (FastMCP primitive)
+  - skill://<name>/_manifest        manifest of supporting files in the skill
+
+Project-local skills live at `.keystone/harness/skills/<name>/SKILL.md`.
+They are discovered automatically by FastMCP's SkillsDirectoryProvider —
+agent runtimes (Claude Code, Cursor, etc.) auto-load them.
 
 Tools cover parameterized retrieval and write operations:
   - get_context(topic), list_topics(tag?)
@@ -49,6 +56,15 @@ def build_server() -> FastMCP:
     config = load_config(_config_path())
     resolver = Resolver(config)
     mcp = FastMCP(name="keystone-mcp", instructions=INSTRUCTIONS)
+
+    # Mount FastMCP's SkillsDirectoryProvider at .keystone/harness/skills/.
+    # Each subdirectory containing a SKILL.md becomes a discoverable
+    # `skill://<name>/SKILL.md` resource. The directory may or may not
+    # exist at server start; FastMCP picks up additions/removals at
+    # discovery time.
+    skills_dir = Path(HARNESS_ROOT) / "skills"
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    mcp.add_provider(SkillsDirectoryProvider(roots=skills_dir))
 
     # Tools: parameterized retrieval + write operations ------------------
 
@@ -127,23 +143,23 @@ def build_server() -> FastMCP:
         return Scaffold(HARNESS_ROOT).new_sensor(name, kind=kind, force=force)
 
     @mcp.tool
-    async def harness_new_action(name: str, force: bool = False) -> dict:
-        """Scaffold a new action under `.keystone/harness/actions/` (single unit of lifecycle work)."""
-        return Scaffold(HARNESS_ROOT).new_action(name, force=force)
-
-    @mcp.tool
-    async def harness_new_playbook(
+    async def harness_new_skill(
         name: str,
-        actions: list[str] | None = None,
+        description: str | None = None,
         force: bool = False,
     ) -> dict:
-        """Scaffold a new playbook under `.keystone/harness/playbooks/` (ordered action chain).
+        """Scaffold `<.keystone/harness/skills/<name>/SKILL.md`.
 
-        `actions` is an optional list of action names already present under
-        `.keystone/harness/actions/`. Each becomes a numbered step.
+        Skills are the FastMCP-native primitive for agent-discoverable
+        procedural how-to. Each subdirectory containing a `SKILL.md` becomes
+        a discoverable skill, surfaced as `skill://<name>/SKILL.md` and
+        auto-loaded by agent runtimes (Claude Code, Cursor, etc.).
+
+        Replaces the older `actions/` and `playbooks/` directories from
+        Phase 11b — both concepts collapse into skills.
         """
-        return Scaffold(HARNESS_ROOT).new_playbook(
-            name, actions=actions, force=force
+        return Scaffold(HARNESS_ROOT).new_skill(
+            name, description=description, force=force
         )
 
     @mcp.tool

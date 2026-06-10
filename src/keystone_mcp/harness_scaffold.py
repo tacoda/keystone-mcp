@@ -32,8 +32,7 @@ BOOTSTRAP_DIRS = (
     "guides",
     "corpus",
     "corpus/state",
-    "actions",
-    "playbooks",
+    "skills",
     "sensors",
     "adapters",
     "learning/inbox",
@@ -109,35 +108,27 @@ def render_sensor(name: str, kind: str) -> str:
     )
 
 
-def render_action(name: str) -> str:
+def render_skill(name: str, description: str | None = None) -> str:
+    """Render a SKILL.md file body.
+
+    YAML frontmatter declares `description` so FastMCP's
+    `SkillsDirectoryProvider` and agent runtimes (Claude Code, Cursor) can
+    surface a one-line summary without parsing body text.
+    """
+    desc = description or f"<one-line description of the {name} skill>"
     return (
+        "---\n"
+        f"description: {desc}\n"
+        "---\n\n"
         f"# {name}\n\n"
-        "**<One-line summary of what this action does.>**\n\n"
+        "**<One-line summary of what this skill does.>**\n\n"
+        "## When to use\n\n"
+        "<Conditions under which the agent should invoke this skill.>\n\n"
         "## Activities\n\n"
         "1. Step one.\n"
         "2. Step two.\n\n"
         "## Output\n\n"
-        "What this action produces (a file diff, a report, a state update).\n"
-    )
-
-
-def render_playbook(name: str, actions: list[str]) -> str:
-    arrow = " → ".join(actions) if actions else "<list actions here>"
-    if actions:
-        steps = "\n".join(
-            f"{i + 1}. **{a}** — read [`{a}.md`](../actions/{a}.md)."
-            for i, a in enumerate(actions)
-        )
-    else:
-        steps = (
-            "1. **<first action>** — read [`<first>.md`](../actions/<first>.md).\n"
-            "2. **<next action>** — ..."
-        )
-    return (
-        f"# {name}\n\n"
-        f"**Orchestrates {arrow}.**\n\n"
-        "## Activities\n\n"
-        f"{steps}\n"
+        "<What this skill produces (a file diff, a report, a state update).>\n"
     )
 
 
@@ -314,29 +305,24 @@ class Scaffold:
             created=[p] if created else [], skipped=[] if created else [p]
         ).to_dict()
 
-    def new_action(
-        self, name: str, *, force: bool = False
-    ) -> dict[str, list[str]]:
-        _validate_name(name, "action")
-        path = self._root / "actions" / f"{name}.md"
-        created, p = _write(path, render_action(name), force=force)
-        return WriteResult(
-            created=[p] if created else [], skipped=[] if created else [p]
-        ).to_dict()
-
-    def new_playbook(
+    def new_skill(
         self,
         name: str,
         *,
-        actions: list[str] | None = None,
+        description: str | None = None,
         force: bool = False,
     ) -> dict[str, list[str]]:
-        _validate_name(name, "playbook")
-        action_list = list(actions or [])
-        for a in action_list:
-            _validate_name(a, "referenced action")
-        path = self._root / "playbooks" / f"{name}.md"
-        created, p = _write(path, render_playbook(name, action_list), force=force)
+        """Scaffold `<root>/skills/<name>/SKILL.md`.
+
+        FastMCP's `SkillsDirectoryProvider` discovers one skill per
+        subdirectory containing a `SKILL.md`. The agent runtime (Claude
+        Code, Cursor, etc.) auto-loads these as skill resources.
+        """
+        _validate_name(name, "skill")
+        path = self._root / "skills" / name / "SKILL.md"
+        created, p = _write(
+            path, render_skill(name, description=description), force=force
+        )
         return WriteResult(
             created=[p] if created else [], skipped=[] if created else [p]
         ).to_dict()
@@ -379,7 +365,12 @@ class Scaffold:
     # Audit ----------------------------------------------------------------
 
     def status(self) -> dict[str, Any]:
-        """Count files per harness subdir + report which are missing."""
+        """Count items per harness subdir + report which are missing.
+
+        For most subdirs, "items" = `.md` files (excluding README.md).
+        For `skills/`, "items" = subdirectories containing a SKILL.md, since
+        skills are directory-shaped per the FastMCP convention.
+        """
         out: dict[str, Any] = {
             "root": str(self._root),
             "root_exists": self._root.exists() and self._root.is_dir(),
@@ -387,7 +378,7 @@ class Scaffold:
         }
         if not out["root_exists"]:
             return out
-        for sub in ("guides", "corpus", "actions", "playbooks", "sensors", "adapters"):
+        for sub in ("guides", "corpus", "sensors", "adapters"):
             d = self._root / sub
             if not d.is_dir():
                 out["subdirs"][sub] = {"present": False, "files": 0}
@@ -398,6 +389,16 @@ class Scaffold:
                 if p.is_file() and p.name != "README.md"
             )
             out["subdirs"][sub] = {"present": True, "files": count}
+        skills_dir = self._root / "skills"
+        if not skills_dir.is_dir():
+            out["subdirs"]["skills"] = {"present": False, "files": 0}
+        else:
+            count = sum(
+                1
+                for d in skills_dir.iterdir()
+                if d.is_dir() and (d / "SKILL.md").is_file()
+            )
+            out["subdirs"]["skills"] = {"present": True, "files": count}
         return out
 
 

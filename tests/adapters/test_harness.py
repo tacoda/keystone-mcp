@@ -46,19 +46,15 @@ The system is a context broker.
 """
     )
 
-    (root / "actions").mkdir()
-    (root / "actions" / "spec.md").write_text(
-        """# spec
+    (root / "skills" / "cut-release").mkdir(parents=True)
+    (root / "skills" / "cut-release" / "SKILL.md").write_text(
+        """---
+description: Cut a patch release
+---
 
-Author the spec, list acceptance criteria.
-"""
-    )
+# cut-release
 
-    (root / "playbooks").mkdir()
-    (root / "playbooks" / "task.md").write_text(
-        """# task
-
-End-to-end task workflow: spec → orient → verify.
+Bump version, tag, push.
 """
     )
 
@@ -178,21 +174,16 @@ async def test_corpus_emits_one_reasoning_per_file(tmp_path):
     assert docs[0].source == "harness://corpus/architecture.md"
 
 
-async def test_actions_emit_skills(tmp_path):
+async def test_actions_query_type_removed(tmp_path):
     _build_min_harness(tmp_path)
-    docs = await _adapter(tmp_path).fetch({"type": "actions"}, {})
-    assert [d.kind for d in docs] == ["skill"]
-    assert docs[0].name == "spec"
-    assert docs[0].id == "spec"
-    assert "acceptance criteria" in docs[0].text
+    with pytest.raises(AdapterError, match="unknown query.type"):
+        await _adapter(tmp_path).fetch({"type": "actions"}, {})
 
 
-async def test_playbooks_emit_skills(tmp_path):
+async def test_playbooks_query_type_removed(tmp_path):
     _build_min_harness(tmp_path)
-    docs = await _adapter(tmp_path).fetch({"type": "playbooks"}, {})
-    assert [d.kind for d in docs] == ["skill"]
-    assert docs[0].name == "task"
-    assert "End-to-end" in docs[0].text
+    with pytest.raises(AdapterError, match="unknown query.type"):
+        await _adapter(tmp_path).fetch({"type": "playbooks"}, {})
 
 
 async def test_sensors_emit_skills(tmp_path):
@@ -231,7 +222,7 @@ async def test_health_reports_present_subdirs(tmp_path):
     h = await _adapter(tmp_path).health()
     assert h["ok"] is True
     assert set(h["subdirs_present"]) == {
-        "guides", "corpus", "actions", "playbooks", "sensors"
+        "guides", "corpus", "sensors", "skills"
     }
 
 

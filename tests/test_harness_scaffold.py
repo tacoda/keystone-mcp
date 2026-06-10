@@ -7,12 +7,11 @@ from keystone_mcp.harness_scaffold import (
     Scaffold,
     ScaffoldError,
     options_catalog,
-    render_action,
     render_adapter_readme,
     render_agent_menu,
     render_guide,
-    render_playbook,
     render_sensor,
+    render_skill,
 )
 
 
@@ -54,24 +53,17 @@ def test_render_sensor_invalid_kind_raises():
         render_sensor("x", "bogus")
 
 
-def test_render_action_minimal_shape():
-    out = render_action("spec")
-    assert "# spec" in out
+def test_render_skill_writes_frontmatter():
+    out = render_skill("cut-release")
+    assert out.startswith("---\n")
+    assert "description: <one-line description of the cut-release skill>" in out
+    assert "## When to use" in out
     assert "## Activities" in out
-    assert "## Output" in out
 
 
-def test_render_playbook_inlines_action_steps():
-    out = render_playbook("task", ["spec", "orient", "verify"])
-    assert "spec → orient → verify" in out
-    assert "**spec**" in out
-    assert "[`orient.md`](../actions/orient.md)" in out
-
-
-def test_render_playbook_empty_actions_falls_back_to_placeholders():
-    out = render_playbook("task", [])
-    assert "<list actions here>" in out
-    assert "<first action>" in out
+def test_render_skill_honors_explicit_description():
+    out = render_skill("cut-release", description="Cut a patch release")
+    assert "description: Cut a patch release" in out
 
 
 def test_render_adapter_readme_mentions_agent():
@@ -169,29 +161,32 @@ def test_new_sensor_writes_file(tmp_path):
     assert "Sensor: build" in body
 
 
-def test_new_action_writes_file(tmp_path):
+def test_new_skill_creates_subdir_with_SKILL_md(tmp_path):
     s = _scaffold(tmp_path)
     s.bootstrap()
-    result = s.new_action("spec")
+    result = s.new_skill("cut-release", description="Cut a patch release")
     path = Path(result["created"][0])
-    assert path == s.root / "actions" / "spec.md"
-
-
-def test_new_playbook_with_actions(tmp_path):
-    s = _scaffold(tmp_path)
-    s.bootstrap()
-    result = s.new_playbook("task", actions=["spec", "verify"])
-    path = Path(result["created"][0])
+    assert path == s.root / "skills" / "cut-release" / "SKILL.md"
     body = path.read_text()
-    assert "spec → verify" in body
-    assert "**spec**" in body
+    assert body.startswith("---\n")
+    assert "description: Cut a patch release" in body
+    assert "# cut-release" in body
 
 
-def test_new_playbook_validates_referenced_action_names(tmp_path):
+def test_new_skill_refuses_overwrite_without_force(tmp_path):
     s = _scaffold(tmp_path)
     s.bootstrap()
-    with pytest.raises(ScaffoldError, match="referenced action"):
-        s.new_playbook("task", actions=["spec", "../bad"])
+    s.new_skill("cut-release")
+    second = s.new_skill("cut-release")
+    assert second["created"] == []
+    assert len(second["skipped"]) == 1
+
+
+def test_new_skill_invalid_name_rejected(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    with pytest.raises(ScaffoldError, match="skill name"):
+        s.new_skill("../bad")
 
 
 def test_new_adapter_creates_dir_and_readme(tmp_path):
@@ -254,11 +249,22 @@ def test_status_reports_subdir_counts(tmp_path):
     s.new_guide("a")
     s.new_guide("b")
     s.new_sensor("build", kind="build")
+    s.new_skill("cut-release")
     status = s.status()
     assert status["root_exists"] is True
     assert status["subdirs"]["guides"]["files"] == 2
     assert status["subdirs"]["sensors"]["files"] == 1
-    assert status["subdirs"]["actions"]["files"] == 0
+    assert status["subdirs"]["skills"]["files"] == 1
+
+
+def test_status_counts_skills_by_subdir_with_SKILL_md(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    # Bare directory without SKILL.md should not count.
+    (s.root / "skills" / "empty-dir").mkdir()
+    s.new_skill("real-skill")
+    status = s.status()
+    assert status["subdirs"]["skills"]["files"] == 1
 
 
 def test_status_when_root_missing(tmp_path):

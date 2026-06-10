@@ -1,4 +1,4 @@
-"""Harness adapter — Phase 11a.
+"""Harness adapter — Phase 11a (revised Phase 14a).
 
 Reads a keystone-style harness directory tree natively. The directory layout
 encodes the kind of each file:
@@ -6,9 +6,11 @@ encodes the kind of each file:
     <root>/
       guides/**.md       → rules (tiered by H2 section name)
       corpus/**.md       → reasoning (one doc per file)
-      actions/*.md       → skills (one skill per file)
-      playbooks/*.md     → skills (one skill per file)
       sensors/*.md       → skills (description of computational checks)
+
+Project-local skills live at `<root>/skills/<name>/SKILL.md` and are served
+by FastMCP's `SkillsDirectoryProvider` as `skill://` resources, NOT through
+this adapter.
 
 `README.md` files at any depth are skipped — they document the layout, not
 content.
@@ -201,15 +203,14 @@ class HarnessAdapter:
             return self._read_dir("guides", _read_guide_file)
         if qtype == "corpus":
             return self._read_dir("corpus", _read_corpus_file)
-        if qtype == "actions":
-            return self._read_dir("actions", _read_skill_file)
-        if qtype == "playbooks":
-            return self._read_dir("playbooks", _read_skill_file)
         if qtype == "sensors":
             return self._read_dir("sensors", _read_skill_file)
         raise AdapterError(
             f"harness adapter: unknown query.type {qtype!r} "
-            "(known: guides, corpus, actions, playbooks, sensors)"
+            "(known: guides, corpus, sensors). "
+            "Project-local skills live at .keystone/harness/skills/<name>/SKILL.md "
+            "and are served via FastMCP's SkillsDirectoryProvider as `skill://` "
+            "resources, not through this adapter."
         )
 
     def _read_dir(self, name: str, reader) -> list[ContextDoc]:
@@ -223,7 +224,7 @@ class HarnessAdapter:
         ok = self._root.exists() and self._root.is_dir()
         present: list[str] = []
         if ok:
-            for sub in ("guides", "corpus", "actions", "playbooks", "sensors"):
+            for sub in ("guides", "corpus", "sensors", "skills"):
                 if (self._root / sub).is_dir():
                     present.append(sub)
         return {

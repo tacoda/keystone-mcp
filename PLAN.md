@@ -699,6 +699,45 @@ Shipped:
 
 Surface count: 9 tools, 3 static resources, 2 resource templates.
 
+## Phase 14a — adopt FastMCP skills primitive (shipped)
+
+**Goal:** collapse `actions/` and `playbooks/` into `skills/<name>/SKILL.md`
+directories. Mount FastMCP's `SkillsDirectoryProvider` at
+`.keystone/harness/skills/` so each skill becomes a `skill://` resource
+discoverable by agent runtimes (Claude Code, Cursor, etc.).
+
+Shipped:
+- `BOOTSTRAP_DIRS` updated: dropped `actions`, `playbooks`. Added `skills`.
+- `Scaffold.new_skill(name, description=?)` creates
+  `<root>/skills/<name>/SKILL.md` (directory-per-skill, FastMCP convention).
+  YAML frontmatter declares `description:` so agents can surface a one-line
+  summary without parsing body text.
+- `harness_new_skill` MCP tool replaces `harness_new_action` +
+  `harness_new_playbook`.
+- Harness adapter drops `actions` and `playbooks` query types; their
+  emission used to be `skill` envelope kind, but project-local skills now
+  go through the FastMCP primitive instead. Error message points users at
+  `skill://` resources for the new path.
+- `server.py` mounts `SkillsDirectoryProvider(roots=.keystone/harness/skills)`.
+  Each `<name>/SKILL.md` is auto-exposed as `skill://<name>/SKILL.md`
+  + a `skill://<name>/_manifest` listing supporting files.
+- `Scaffold.status()` counts skills by subdirectory containing a `SKILL.md`,
+  matching how the provider discovers them.
+- 235 tests pass (drops for action/playbook tests; new tests for
+  `new_skill` + status counting).
+
+**Disambiguation chosen (Option A):** two surfaces share the word "skill":
+- **File skills** (FastMCP primitive) — project-local
+  `<harness>/skills/<name>/SKILL.md` directories, surfaced as `skill://`
+  resources. Agent runtimes auto-load.
+- **Inline skills** (envelope `skill` kind) — comes from external adapters
+  (Confluence "Procedures" sections, Notion `heading_3` blocks). Different
+  population path, same conceptual category. Continues to surface through
+  `context://{topic}` envelopes.
+
+Phases 14b/14c/14d to follow: lifecycle prompts, shipped scripts, proactive
+rule injection.
+
 ## Phase 12+ — remaining open work
 
 - **Packaging.** Publish to PyPI and wire `uvx keystone-mcp` as the
