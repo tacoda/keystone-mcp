@@ -460,14 +460,65 @@ Shipped:
 - Source URI prefers issue.url from Linear; falls back to `linear://{id}`.
 - Tests: 18 new (`tests/adapters/test_linear.py`) via respx. Total: 115.
 
-## Phase 7+ — additional adapters
+## Phase 7 — Slack adapter (shipped)
 
-Ordered by likely user demand. Each must implement classifiers for some subset
-of `rules | reasoning | skills | commands`.
+**Goal:** ship the last adapter on the Phase 2+ roadmap. Slack is unique on
+this list: it's the only adapter that emits *both* rules (from pinned
+messages) and reasoning (from recent discussion), and the only one whose
+backend uses HTTP 200 + `{ok: false}` for application errors.
 
-| Adapter | Rules | Reasoning | Skills | Commands |
-|---|---|---|---|---|
-| Slack | pinned channel rules | recent discussion (read-only, time-bounded) | — | — |
+Shipped:
+- `slack` adapter (`adapters/slack.py`) — Slack Web API, Bearer token (bot
+  or user OAuth, `xoxb-...` / `xoxp-...`). Query types:
+  - `pinned` (`channel: <name|id>`) → rules. Each pinned message becomes one
+    rule. Severity defaults from `classify.rules.severity` (default `must`);
+    `MUST/SHOULD/MAY` prefix in the message text overrides per-item.
+  - `recent` (`channel`, `limit` default 50 / cap 200, optional `since` ISO
+    timestamp → Slack `oldest` epoch) → reasoning per message. Text is
+    `@{user}: {message}`; recency is the Slack `ts` rendered as ISO.
+  - Health endpoint hits `/auth.test` and surfaces team + user + URL.
+- Channel resolution: accepts ID (regex-matched as `[CDG][A-Z0-9]{6,}`) or
+  name (with or without leading `#`). Name → ID resolved via paginated
+  `conversations.list` (200 per page, follows `response_metadata.next_cursor`),
+  cached per adapter instance.
+- Error handling: HTTP 401 → `AuthError`. Body-level `{ok: false}` with auth
+  codes (`invalid_auth`, `not_authed`, `token_revoked`, `token_expired`,
+  `no_permission`, `missing_scope`, `account_inactive`) → `AuthError`; others
+  → `AdapterError`.
+- Source URIs prefer Slack-provided `message.permalink`; fall back to
+  `slack://{channel_id}/{ts}` so the agent can always cite an origin.
+- Tests: 25 new (`tests/adapters/test_slack.py`) via respx — includes ts↔ISO
+  unit tests, channel-name caching, paginated channel lookup, and severity
+  prefix parsing. Total: 140.
+
+## Phase 8+ — remaining open work
+
+The Phase 2+ adapter table is now empty — all seven planned adapters
+(markdown, GitHub, Confluence, Notion, Jira, Linear, Slack) have shipped.
+The next batch of work targets the remaining open design questions and
+internal refactors rather than new adapters.
+
+Candidate threads:
+- **Shared classifier primitives.** Markdown, Confluence, and Notion each
+  carry near-identical `_extract_rules` / `_extract_reasoning` / `_extract_skills`
+  / `_extract_commands` functions over their native section/bullet/h3
+  primitives. A small `adapters/_classify.py` taking pre-normalized inputs
+  would cut ~30% of adapter code and tighten the classify-vocabulary
+  contract.
+- **Persistent cache** (open Q3). Phase 1's in-memory TTL is fine for short
+  sessions, but reopening a fresh server every invocation pays the GitHub /
+  Confluence / Notion / Jira / Linear / Slack round-trip latencies cold.
+  sqlite-backed cache keyed by `(topic, source, query-hash)` with TTL is the
+  obvious shape.
+- **Secret-store auth** (open Q2). `env:NAME` is portable but forces secrets
+  into shell rc files. Macos Keychain / 1Password CLI integration via a
+  `secret:NAME` scheme that calls out at config-load time.
+- **Proactive rule injection** (open Q6). The host could stitch
+  `must`-severity rules from a configured "session-prelude" topic into the
+  system prompt at session start, so the agent has them before the first
+  tool call.
+- **Classifier strength DSL** (open Q4). Defer until a real
+  misclassification incident surfaces; then design from the failure shape.
 
 ---
 
@@ -524,7 +575,8 @@ keystone-mcp/
 │           ├── confluence.py    # Phase 3
 │           ├── notion.py        # Phase 4
 │           ├── jira.py          # Phase 5
-│           └── linear.py        # Phase 6
+│           ├── linear.py        # Phase 6
+│           └── slack.py         # Phase 7
 └── tests/
     ├── test_config.py
     ├── test_resolver.py
@@ -536,5 +588,6 @@ keystone-mcp/
         ├── test_confluence.py
         ├── test_notion.py
         ├── test_jira.py
-        └── test_linear.py
+        ├── test_linear.py
+        └── test_slack.py
 ```

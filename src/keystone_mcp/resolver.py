@@ -8,6 +8,7 @@ from .adapters.jira import JiraAdapter
 from .adapters.linear import LinearAdapter
 from .adapters.markdown import MarkdownAdapter
 from .adapters.notion import NotionAdapter
+from .adapters.slack import SlackAdapter
 from .cache import TTLCache, make_key, parse_ttl
 from .config import KeystoneConfig, SourceConfig, TopicConfig
 from .errors import ConfigError, UnknownSourceError, UnknownTopicError
@@ -101,6 +102,19 @@ def _build_linear(source: SourceConfig) -> LinearAdapter:
     )
 
 
+def _build_slack(source: SourceConfig) -> SlackAdapter:
+    s = source.settings
+    token = s.get("auth")
+    if not token:
+        raise ConfigError(
+            f"source {source.name!r}: slack adapter requires 'auth' (OAuth token)"
+        )
+    return SlackAdapter(
+        token=token,
+        base_url=s.get("base_url", "https://slack.com/api"),
+    )
+
+
 _BUILDERS = {
     "markdown": _build_markdown,
     "github": _build_github,
@@ -108,6 +122,7 @@ _BUILDERS = {
     "notion": _build_notion,
     "jira": _build_jira,
     "linear": _build_linear,
+    "slack": _build_slack,
 }
 
 

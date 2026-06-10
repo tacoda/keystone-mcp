@@ -33,6 +33,11 @@ sources:
   #   type: linear
   #   auth: env:LINEAR_API_KEY
 
+  # Uncomment when a Slack OAuth token is set in the environment.
+  # slack:
+  #   type: slack
+  #   auth: env:SLACK_BOT_TOKEN
+
 topics:
   deploy-policy:
     description: |
@@ -142,3 +147,20 @@ topics:
   #           state: { type: { neq: "completed" } }
   #         limit: 25
   #   cache: 2m
+
+  # deploy-channel-rules:
+  #   description: |
+  #     Pinned-message rules in the #deploys Slack channel + recent
+  #     discussion as reasoning.
+  #   sources:
+  #     - source: slack
+  #       query: { type: pinned, channel: deploys }
+  #       classify:
+  #         rules: { severity: must }
+  #     - source: slack
+  #       query:
+  #         type: recent
+  #         channel: deploys
+  #         limit: 25
+  #         since: "2026-06-01T00:00:00Z"
+  #   cache: 5m
