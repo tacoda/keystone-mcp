@@ -5,6 +5,7 @@ from .adapters.base import Adapter
 from .adapters.confluence import ConfluenceAdapter
 from .adapters.github import GitHubAdapter
 from .adapters.markdown import MarkdownAdapter
+from .adapters.notion import NotionAdapter
 from .cache import TTLCache, make_key, parse_ttl
 from .config import KeystoneConfig, SourceConfig, TopicConfig
 from .errors import ConfigError, UnknownSourceError, UnknownTopicError
@@ -53,10 +54,25 @@ def _build_confluence(source: SourceConfig) -> ConfluenceAdapter:
     return ConfluenceAdapter(base_url=base_url, email=email, token=token)
 
 
+def _build_notion(source: SourceConfig) -> NotionAdapter:
+    s = source.settings
+    token = s.get("auth")
+    if not token:
+        raise ConfigError(
+            f"source {source.name!r}: notion adapter requires 'auth' (integration token)"
+        )
+    return NotionAdapter(
+        token=token,
+        notion_version=s.get("notion_version", "2022-06-28"),
+        base_url=s.get("base_url", "https://api.notion.com/v1"),
+    )
+
+
 _BUILDERS = {
     "markdown": _build_markdown,
     "github": _build_github,
     "confluence": _build_confluence,
+    "notion": _build_notion,
 }
 
 

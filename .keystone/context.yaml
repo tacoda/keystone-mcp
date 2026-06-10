@@ -16,6 +16,11 @@ sources:
   #   email: env:CONFLUENCE_EMAIL
   #   auth: env:CONFLUENCE_API_TOKEN
 
+  # Uncomment when a Notion integration token is set in the environment.
+  # notion:
+  #   type: notion
+  #   auth: env:NOTION_TOKEN
+
 topics:
   deploy-policy:
     description: |

@@ -388,14 +388,36 @@ Shipped:
   Confluence with the same `classify` block on each binding.
 - Tests: 13 new (`tests/adapters/test_confluence.py`) via respx. Total: 68.
 
-## Phase 4+ — additional adapters
+## Phase 4 — Notion adapter (shipped)
+
+**Goal:** prove block-structured retrieval (Notion's API exposes pages as a
+flat list of typed blocks, not HTML).
+
+Shipped:
+- `notion` adapter (`adapters/notion.py`) — Notion REST API v1, Bearer
+  integration token, `Notion-Version: 2022-06-28`. Query types:
+  - `page` (by `id` or `title` resolved via `/search` with case-insensitive
+    exact-match) → classified docs parsed from the page's top-level blocks.
+  - `database` (entries via `/databases/{id}/query`) → reasoning with title,
+    page id, and `last_edited_time` as `recency`.
+  - Health endpoint hits `/users/me` and surfaces the workspace name.
+- Block-walking classifier: sections split by `heading_2`; skills/commands
+  sections sub-split by `heading_3`. For commands, the first `code` block in
+  each entry becomes the invocation. Rule items pulled from
+  `bulleted_list_item` / `numbered_list_item`. `rich_text` arrays joined via
+  their `plain_text` field.
+- Pagination of `/blocks/{id}/children` (100 per page) via `start_cursor`.
+- Same classify vocabulary as markdown / Confluence — one block portable
+  across all three on a multi-source topic.
+- Tests: 14 new (`tests/adapters/test_notion.py`) via respx. Total: 82.
+
+## Phase 5+ — additional adapters
 
 Ordered by likely user demand. Each must implement classifiers for some subset
 of `rules | reasoning | skills | commands`.
 
 | Adapter | Rules | Reasoning | Skills | Commands |
 |---|---|---|---|---|
-| Notion | team agreements, OKRs as constraints | wiki pages, project briefs | onboarding playbooks | named recipes pages |
 | Jira | exit criteria, DoD checklists | sprint goal, in-flight tickets | how-to descriptions on tickets | — |
 | Linear | (alt to Jira) | (alt to Jira) | (alt to Jira) | — |
 | Slack | pinned channel rules | recent discussion (read-only, time-bounded) | — | — |
@@ -452,7 +474,8 @@ keystone-mcp/
 │           ├── base.py          # Adapter protocol
 │           ├── markdown.py      # Phase 1
 │           ├── github.py        # Phase 2
-│           └── confluence.py    # Phase 3
+│           ├── confluence.py    # Phase 3
+│           └── notion.py        # Phase 4
 └── tests/
     ├── test_config.py
     ├── test_resolver.py
@@ -461,5 +484,6 @@ keystone-mcp/
     └── adapters/
         ├── test_markdown.py
         ├── test_github.py
-        └── test_confluence.py
+        ├── test_confluence.py
+        └── test_notion.py
 ```
