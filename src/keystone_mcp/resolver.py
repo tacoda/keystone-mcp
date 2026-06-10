@@ -5,6 +5,7 @@ from .adapters.base import Adapter
 from .adapters.confluence import ConfluenceAdapter
 from .adapters.github import GitHubAdapter
 from .adapters.jira import JiraAdapter
+from .adapters.linear import LinearAdapter
 from .adapters.markdown import MarkdownAdapter
 from .adapters.notion import NotionAdapter
 from .cache import TTLCache, make_key, parse_ttl
@@ -87,12 +88,26 @@ def _build_jira(source: SourceConfig) -> JiraAdapter:
     return JiraAdapter(base_url=base_url, email=email, token=token)
 
 
+def _build_linear(source: SourceConfig) -> LinearAdapter:
+    s = source.settings
+    api_key = s.get("auth")
+    if not api_key:
+        raise ConfigError(
+            f"source {source.name!r}: linear adapter requires 'auth' (personal API key)"
+        )
+    return LinearAdapter(
+        api_key=api_key,
+        base_url=s.get("base_url", "https://api.linear.app/graphql"),
+    )
+
+
 _BUILDERS = {
     "markdown": _build_markdown,
     "github": _build_github,
     "confluence": _build_confluence,
     "notion": _build_notion,
     "jira": _build_jira,
+    "linear": _build_linear,
 }
 
 

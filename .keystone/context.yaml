@@ -28,6 +28,11 @@ sources:
   #   email: env:JIRA_EMAIL
   #   auth: env:JIRA_API_TOKEN
 
+  # Uncomment when a Linear personal API key is set in the environment.
+  # linear:
+  #   type: linear
+  #   auth: env:LINEAR_API_KEY
+
 topics:
   deploy-policy:
     description: |
@@ -122,5 +127,18 @@ topics:
   #       query:
   #         type: jql
   #         jql: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
+  #         limit: 25
+  #   cache: 2m
+
+  # my-linear-work:
+  #   description: |
+  #     My open Linear issues, ordered by recent update.
+  #   sources:
+  #     - source: linear
+  #       query:
+  #         type: issues
+  #         filter:
+  #           assignee: { isMe: { eq: true } }
+  #           state: { type: { neq: "completed" } }
   #         limit: 25
   #   cache: 2m

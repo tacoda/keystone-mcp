@@ -435,14 +435,38 @@ Shipped:
 - Tests: 15 new (`tests/adapters/test_jira.py`) via respx, including ADF
   walker unit tests. Total: 97.
 
-## Phase 6+ — additional adapters
+## Phase 6 — Linear adapter (shipped)
+
+**Goal:** prove a GraphQL-shaped adapter alongside the REST-shaped ones, and
+ship the second ticketing surface.
+
+Shipped:
+- `linear` adapter (`adapters/linear.py`) — Linear GraphQL API, personal API
+  key in raw `Authorization` header (no `Bearer` prefix — Linear quirk).
+  Query types:
+  - `issue` (by team identifier like `PORT-123` or UUID) → 1 reasoning doc
+    with summary line plus the issue description (Linear stores descriptions
+    as markdown — no walker needed).
+  - `issues` (typed `IssueFilter` dict + `limit` capped at 100) → reasoning
+    per matching node. `filter` passes through verbatim as the GraphQL
+    `IssueFilter` variable.
+  - Health endpoint hits `viewer { id name email }`.
+- GraphQL error handling: top-level HTTP 401 → `AuthError`. Body-level
+  `errors[]` with `extensions.code` containing `AUTHENTICATION` → `AuthError`;
+  other GraphQL errors → `AdapterError` with all messages concatenated.
+- Summary line shape:
+  `{identifier} [{state}, priority {N}] assignee={name}: {title}`. Priority
+  rendered as integer (Linear uses 0–4); missing priority renders as `-`.
+- Source URI prefers issue.url from Linear; falls back to `linear://{id}`.
+- Tests: 18 new (`tests/adapters/test_linear.py`) via respx. Total: 115.
+
+## Phase 7+ — additional adapters
 
 Ordered by likely user demand. Each must implement classifiers for some subset
 of `rules | reasoning | skills | commands`.
 
 | Adapter | Rules | Reasoning | Skills | Commands |
 |---|---|---|---|---|
-| Linear | (alt to Jira) | (alt to Jira) | (alt to Jira) | — |
 | Slack | pinned channel rules | recent discussion (read-only, time-bounded) | — | — |
 
 ---
@@ -499,7 +523,8 @@ keystone-mcp/
 │           ├── github.py        # Phase 2
 │           ├── confluence.py    # Phase 3
 │           ├── notion.py        # Phase 4
-│           └── jira.py          # Phase 5
+│           ├── jira.py          # Phase 5
+│           └── linear.py        # Phase 6
 └── tests/
     ├── test_config.py
     ├── test_resolver.py
@@ -510,5 +535,6 @@ keystone-mcp/
         ├── test_github.py
         ├── test_confluence.py
         ├── test_notion.py
-        └── test_jira.py
+        ├── test_jira.py
+        └── test_linear.py
 ```
