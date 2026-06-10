@@ -54,15 +54,12 @@ def test_render_guide_rejects_old_tier_names():
 def test_render_sensor_writes_frontmatter():
     out = render_sensor("build", "computational")
     assert "kind: computational" in out
-    assert "script: build.sh" in out
+    # No script field — adapter infers from <root>/scripts/<name>.sh.
+    assert "script:" not in out
     assert out.startswith("---\n")
     assert "# Sensor: build" in out
     assert "blocking" in out
-
-
-def test_render_sensor_custom_script_name():
-    out = render_sensor("lint", "lint", script="custom.sh")
-    assert "script: custom.sh" in out
+    assert ".keystone/harness/scripts/build.sh" in out
 
 
 def test_render_sensor_invalid_kind_raises():
@@ -184,8 +181,9 @@ def test_new_sensor_writes_sensor_and_script(tmp_path):
     assert s.root / "scripts" / "build.sh" in paths
     sensor_body = (s.root / "sensors" / "build.md").read_text()
     assert "kind: build" in sensor_body
-    assert "script: build.sh" in sensor_body
+    assert "script:" not in sensor_body  # convention-by-name, not declared
     assert "Sensor: build" in sensor_body
+    assert ".keystone/harness/scripts/build.sh" in sensor_body
     # Script is chmod +x
     script_path = s.root / "scripts" / "build.sh"
     assert script_path.stat().st_mode & 0o111

@@ -106,24 +106,30 @@ def render_guide(name: str, tier: str) -> str:
     )
 
 
-def render_sensor(name: str, kind: str, script: str | None = None) -> str:
+def render_sensor(name: str, kind: str) -> str:
     """Render a sensor markdown file.
 
-    Sensors are computational, blocking rules — the agent must run them
-    and they must pass before the workflow can continue. Each sensor
-    points at a shell script under `scripts/` that does the actual check.
+    Sensors are blocking rules — the agent must run them and they must
+    pass for the workflow to continue. Mode (computational vs
+    inferential) is inferred from convention by the harness adapter:
+
+      * `<root>/scripts/<name>.sh` exists → computational; agent shells
+        out to that script.
+      * (planned 14e) matching prompt by name → inferential; agent
+        invokes the prompt to perform the check.
+
+    Frontmatter carries metadata only (e.g. `kind:` category).
     """
     if kind not in SENSOR_KINDS:
         raise ScaffoldError(
             f"sensor kind must be one of {list(SENSOR_KINDS)}, got {kind!r}"
         )
-    script_name = script or f"{name}.sh"
     return (
-        f"---\nkind: {kind}\nscript: {script_name}\n---\n\n"
+        f"---\nkind: {kind}\n---\n\n"
         f"# Sensor: {name}\n\n"
         "What this sensor checks. This is a **blocking** rule — the agent "
         "must run it and it must pass for the workflow to continue.\n\n"
-        f"- **Run** — `.keystone/harness/scripts/{script_name}`\n"
+        f"- **Run** — `.keystone/harness/scripts/{name}.sh`\n"
         "- **Trigger** — when it runs (e.g. verification phase gate).\n"
         "- **Inputs** — what the script reads (files, env vars).\n"
         "- **Exit condition** — pass = exit 0; fail = non-zero.\n"
@@ -347,13 +353,12 @@ class Scaffold:
         present (use `new_script` with `force=True` to refresh a script).
         """
         _validate_name(name, "sensor")
-        script_name = f"{name}.sh"
         sensor_path = self._root / "sensors" / f"{name}.md"
-        script_path = self._root / "scripts" / script_name
+        script_path = self._root / "scripts" / f"{name}.sh"
 
         result = WriteResult([], [])
         sensor_created, sp = _write(
-            sensor_path, render_sensor(name, kind, script=script_name), force=force
+            sensor_path, render_sensor(name, kind), force=force
         )
         (result.created if sensor_created else result.skipped).append(sp)
 

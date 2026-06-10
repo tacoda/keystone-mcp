@@ -806,15 +806,16 @@ Shipped:
 - `Scaffold.new_sensor(name, kind)` now writes BOTH the sensor markdown
   AND the matching `scripts/<name>.sh` stub. Forcing a sensor refresh
   never clobbers an existing script (user's edits are preserved).
-- Sensor template gains `script: <name>.sh` frontmatter line + an
-  explicit `**Run** — .keystone/harness/scripts/<name>.sh` bullet.
+- Sensor template gains an explicit
+  `**Run** — .keystone/harness/scripts/<name>.sh` bullet. Frontmatter is
+  metadata-only (`kind:` category); no `script:` field — mode and
+  invocation are inferred from convention.
 - Harness adapter:
-  - Tiny `_parse_frontmatter` helper (small flat YAML, no PyYAML dep).
-  - Sensors now emit `command` kind (NOT `skill`). Invocation pulled
-    from frontmatter `script:` field, resolved to
-    `.keystone/harness/scripts/<name>` so the agent can shell out
-    directly. Empty invocation when no `script:` field is present
-    (e.g., descriptive-only sensors).
+  - `_strip_frontmatter` skips the leading `---`/`---` block (no parsing
+    needed; convention drives behavior).
+  - Sensors now emit `command` kind (NOT `skill`). Invocation derived by
+    convention: if `<root>/scripts/<sensor-stem>.sh` exists, invocation =
+    that path; otherwise empty (descriptive-only sensor).
 - `harness_new_script` MCP tool exposed for ad-hoc scripts.
 - `task` prompt — verify phase rewritten to enforce **halt on any
   non-zero sensor exit**, with explicit instructions to invoke each

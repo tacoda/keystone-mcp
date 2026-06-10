@@ -222,23 +222,22 @@ async def test_playbooks_query_type_removed(tmp_path):
         await _adapter(tmp_path).fetch({"type": "playbooks"}, {})
 
 
-async def test_sensors_emit_commands_with_script_invocation(tmp_path):
+async def test_sensors_emit_commands_empty_invocation_when_no_script(tmp_path):
     _build_min_harness(tmp_path)
     docs = await _adapter(tmp_path).fetch({"type": "sensors"}, {})
     assert [d.kind for d in docs] == ["command"]
     assert docs[0].name == "build"
-    # The fixture sensor has frontmatter `kind: computational` but no script
-    # field, so invocation is empty.
+    # Fixture has no matching scripts/build.sh — invocation empty.
     assert docs[0].invocation == ""
     assert "build / compile / package" in docs[0].text
 
 
-async def test_sensors_pulls_invocation_from_frontmatter(tmp_path):
+async def test_sensors_invocation_inferred_from_matching_script(tmp_path):
     (tmp_path / "sensors").mkdir()
+    (tmp_path / "scripts").mkdir()
     (tmp_path / "sensors" / "lint.md").write_text(
         """---
 kind: lint
-script: lint.sh
 ---
 
 # Sensor: lint
@@ -246,6 +245,7 @@ script: lint.sh
 Static check.
 """
     )
+    (tmp_path / "scripts" / "lint.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
     docs = await _adapter(tmp_path).fetch({"type": "sensors"}, {})
     assert len(docs) == 1
     assert docs[0].kind == "command"

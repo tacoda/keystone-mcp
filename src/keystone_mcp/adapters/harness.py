@@ -181,38 +181,40 @@ def _read_corpus_file(path: Path, rel: str) -> list[ContextDoc]:
 _FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 
 
-def _parse_frontmatter(body: str) -> tuple[dict[str, str], str]:
-    """Parse a tiny `key: value` YAML frontmatter. Returns (fields, rest).
+def _strip_frontmatter(body: str) -> str:
+    """Return the body with leading `--- ... ---` frontmatter removed.
 
-    Deliberately not full YAML — keystone sensor frontmatter is a small,
-    flat key/value set and pulling in PyYAML for this is overkill.
+    Frontmatter is metadata-only (e.g. `kind: lint`); the adapter doesn't
+    parse it. Mode (computational vs inferential) is inferred from
+    convention: matching `<root>/scripts/<name>.sh` → computational.
     """
     m = _FRONTMATTER_RE.match(body)
-    if not m:
-        return {}, body
-    fields: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        line = line.rstrip()
-        if not line or line.lstrip().startswith("#"):
-            continue
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        fields[key.strip()] = value.strip()
-    return fields, body[m.end():]
+    return body[m.end():] if m else body
 
 
-def _read_sensor_file(path: Path, rel: str) -> list[ContextDoc]:
+def _read_sensor_file(
+    path: Path, rel: str, *, root: Path
+) -> list[ContextDoc]:
     """Read a sensor file. Sensors emit `command` kind — they are blocking
-    rules whose invocation is the shell script under `<root>/scripts/`.
+    rules. Mode (computational / inferential) inferred from convention:
+
+      * scripts/<name>.sh  exists → computational sensor; invocation =
+                                    `.keystone/harness/scripts/<name>.sh`
+      * neither           → descriptive only; empty invocation.
+
+    Inferential sensors (matching prompt by name) land in Phase 14e.
     """
     text = path.read_text(encoding="utf-8")
     if not text.strip():
         return []
-    frontmatter, body = _parse_frontmatter(text)
+    body = _strip_frontmatter(text)
     name = path.stem
-    script = frontmatter.get("script", "").strip()
-    invocation = f".keystone/harness/scripts/{script}" if script else ""
+    script_path = root / "scripts" / f"{name}.sh"
+    invocation = (
+        f".keystone/harness/scripts/{name}.sh"
+        if script_path.is_file()
+        else ""
+    )
     return [
         ContextDoc(
             kind="command",
@@ -248,7 +250,10 @@ class HarnessAdapter:
         if qtype == "corpus":
             return self._read_dir("corpus", _read_corpus_file)
         if qtype == "sensors":
-            return self._read_dir("sensors", _read_sensor_file)
+            return self._read_dir(
+                "sensors",
+                lambda p, r: _read_sensor_file(p, r, root=self._root),
+            )
         raise AdapterError(
             f"harness adapter: unknown query.type {qtype!r} "
             "(known: guides, corpus, sensors). "
