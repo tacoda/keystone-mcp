@@ -4,6 +4,7 @@ from typing import Any
 from .adapters.base import Adapter
 from .adapters.confluence import ConfluenceAdapter
 from .adapters.github import GitHubAdapter
+from .adapters.harness import HarnessAdapter
 from .adapters.jira import JiraAdapter
 from .adapters.linear import LinearAdapter
 from .adapters.markdown import MarkdownAdapter
@@ -115,6 +116,16 @@ def _build_slack(source: SourceConfig) -> SlackAdapter:
     )
 
 
+def _build_harness(source: SourceConfig) -> HarnessAdapter:
+    s = source.settings
+    root = s.get("root")
+    if not root:
+        raise ConfigError(
+            f"source {source.name!r}: harness adapter requires 'root'"
+        )
+    return HarnessAdapter(root=root)
+
+
 _BUILDERS = {
     "markdown": _build_markdown,
     "github": _build_github,
@@ -123,6 +134,7 @@ _BUILDERS = {
     "jira": _build_jira,
     "linear": _build_linear,
     "slack": _build_slack,
+    "harness": _build_harness,
 }
 
 

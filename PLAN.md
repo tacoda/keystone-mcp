@@ -552,13 +552,48 @@ Shipped:
 
 Closes open question on caching backend.
 
-## Phase 10+ — remaining open work
+## Phase 11a — harness adapter (shipped)
 
-No adapters left. Remaining threads target the still-open design questions
-and project polish:
+**Goal:** read keystone-style harness directory trees natively so the same
+content powers both keystone CLI scaffolding and MCP-served retrieval.
 
-- **README + install / quickstart docs.** README is empty. Block to anyone
-  landing on the repo.
+Shipped:
+- `harness` adapter (`adapters/harness.py`). Walks a directory laid out as
+  `<root>/{guides,corpus,actions,playbooks,sensors}/`. Skips `README.md` at
+  any depth.
+- Query types:
+  - `guides` → rules. H2 section headings drive tiering:
+    - `IRON LAW` / `IRON LAWS` → severity `must` (bullets or single prose
+      paragraph both supported).
+    - `RULES` → severity `must` (bullets).
+    - `GOLDEN RULE(S)` → severity `should` (bullets).
+    - `Anti-patterns` → reasoning (educational context).
+    - Other H2 sections ignored.
+    Bullet-level `MUST/SHOULD/MAY` prefix still overrides the tier default,
+    matching the shared classifier vocabulary.
+  - `corpus` → reasoning, one doc per file (full body).
+  - `actions` → skills, one per file (name = filename stem).
+  - `playbooks` → skills, same shape.
+  - `sensors` → skills, same shape.
+  - Health endpoint reports which subdirs are present.
+- 17 new tests (`tests/adapters/test_harness.py`). Total: 188.
+
+Phase 11b (scaffold + manage tools) is next: `bootstrap_harness`,
+`new_guide`, `new_sensor`, `new_action`, `new_playbook`, `new_adapter`,
+`target_add`, `harness_status`. Templates copied from keystone's
+`internal/framework/scaffold/templates/harness/`.
+
+Plugins / `keystone patch` / `keystone verify` are intentionally dropped —
+MCP supplies live cross-project context in their place.
+
+## Phase 12+ — remaining open work
+
+- **Phase 11b**: harness scaffold + manage tools (write-side MCP tools that
+  absorb keystone CLI's `init`, `new`, `target add`, `doctor` surface).
+- **Tools-vs-resources audit.** Some current tools likely belong as MCP
+  resources (`context://list`, `context://{topic}` already are; the narrow
+  getters and source-health may follow). Audit against FastMCP best
+  practice and migrate.
 - **Packaging.** Publish to PyPI and wire `uvx keystone-mcp` as the
   documented install path so consumers don't need to clone.
 - **Real-world smoke test.** Run against live Jira creds (and any others on
@@ -635,7 +670,8 @@ keystone-mcp/
 │           ├── notion.py        # Phase 4
 │           ├── jira.py          # Phase 5
 │           ├── linear.py        # Phase 6
-│           └── slack.py         # Phase 7
+│           ├── slack.py         # Phase 7
+│           └── harness.py       # Phase 11a
 └── tests/
     ├── test_config.py
     ├── test_resolver.py
@@ -649,5 +685,6 @@ keystone-mcp/
         ├── test_notion.py
         ├── test_jira.py
         ├── test_linear.py
-        └── test_slack.py
+        ├── test_slack.py
+        └── test_harness.py
 ```
