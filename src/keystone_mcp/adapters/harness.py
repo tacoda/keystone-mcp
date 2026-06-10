@@ -1,4 +1,4 @@
-"""Harness adapter — Phase 11a (revised Phase 14a).
+"""Harness adapter — Phase 11a (revised Phase 14a, Phase 14c).
 
 Reads a keystone-style harness directory tree natively. The directory layout
 encodes the kind of each file:
@@ -6,7 +6,13 @@ encodes the kind of each file:
     <root>/
       guides/**.md       → rules (tiered by H2 section name)
       corpus/**.md       → reasoning (one doc per file)
-      sensors/*.md       → skills (description of computational checks)
+      sensors/*.md       → commands (blocking checks; invocation pulled from
+                          YAML frontmatter `script:` field pointing into
+                          `<root>/scripts/`)
+
+Sensors are *blocking rules* — the agent must run them and they must pass
+for any workflow to continue. The sensor markdown describes WHAT to check;
+the matching shell script under `<root>/scripts/` is HOW to check.
 
 Project-local skills live at `<root>/skills/<name>/SKILL.md` and are served
 by FastMCP's `SkillsDirectoryProvider` as `skill://` resources, NOT through
@@ -19,12 +25,15 @@ Guides classify by section heading. Bullets inside each tiered section
 become individual rules. An IRON LAW that's a single paragraph (no bullets)
 emits as one rule with `must` severity.
 
-Tier → severity:
-  IRON LAW / IRON LAWS  → must
-  RULES                 → must
-  GOLDEN RULE(S)        → should
-  Anti-patterns         → reasoning (educational context, not constraints)
-  any other H2          → ignored
+Tier strictness cascade (non-negotiable > strong > rules):
+  NON-NEGOTIABLE / IRON LAW(S)  → must     (can never be violated)
+  STRONG / GOLDEN RULE(S)       → should   (hard rule; deviation needs reasoning)
+  RULES                         → may      (regular rule; strong rules override)
+  Anti-patterns                 → reasoning (educational context, not constraints)
+  any other H2                  → ignored
+
+Older keystone-style headings (IRON LAW, GOLDEN RULES) are still recognized
+so harnesses written before the rename keep parsing.
 
 A leading `MUST/SHOULD/MAY` token on a bullet still overrides the tier
 default, matching the shared classifier vocabulary.
@@ -49,11 +58,16 @@ _SEVERITY_PREFIX_RE = re.compile(
 # Tier section name → rule severity. Matched case-insensitively against the
 # H2 heading text (stripped of trailing punctuation).
 _TIER_RULES: dict[str, Severity] = {
+    "non-negotiable": "must",
+    "non negotiable": "must",
+    # Backward compat with older keystone harnesses:
     "iron law": "must",
     "iron laws": "must",
-    "rules": "must",
+    "strong": "should",
+    # Backward compat:
     "golden rule": "should",
     "golden rules": "should",
+    "rules": "may",
 }
 
 _TIER_REASONING = {"anti-patterns", "anti patterns"}
@@ -164,18 +178,48 @@ def _read_corpus_file(path: Path, rel: str) -> list[ContextDoc]:
     ]
 
 
-def _read_skill_file(path: Path, rel: str) -> list[ContextDoc]:
-    """Read an actions/, playbooks/, or sensors/ file as a single skill."""
-    text = path.read_text(encoding="utf-8").strip()
-    if not text:
+_FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
+
+
+def _parse_frontmatter(body: str) -> tuple[dict[str, str], str]:
+    """Parse a tiny `key: value` YAML frontmatter. Returns (fields, rest).
+
+    Deliberately not full YAML — keystone sensor frontmatter is a small,
+    flat key/value set and pulling in PyYAML for this is overkill.
+    """
+    m = _FRONTMATTER_RE.match(body)
+    if not m:
+        return {}, body
+    fields: dict[str, str] = {}
+    for line in m.group(1).splitlines():
+        line = line.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        fields[key.strip()] = value.strip()
+    return fields, body[m.end():]
+
+
+def _read_sensor_file(path: Path, rel: str) -> list[ContextDoc]:
+    """Read a sensor file. Sensors emit `command` kind — they are blocking
+    rules whose invocation is the shell script under `<root>/scripts/`.
+    """
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
         return []
+    frontmatter, body = _parse_frontmatter(text)
     name = path.stem
+    script = frontmatter.get("script", "").strip()
+    invocation = f".keystone/harness/scripts/{script}" if script else ""
     return [
         ContextDoc(
-            kind="skill",
-            text=text,
+            kind="command",
+            text=body.strip(),
             source=f"harness://{rel}",
             name=name,
+            invocation=invocation,
             id=_slugify(name),
         )
     ]
@@ -204,7 +248,7 @@ class HarnessAdapter:
         if qtype == "corpus":
             return self._read_dir("corpus", _read_corpus_file)
         if qtype == "sensors":
-            return self._read_dir("sensors", _read_skill_file)
+            return self._read_dir("sensors", _read_sensor_file)
         raise AdapterError(
             f"harness adapter: unknown query.type {qtype!r} "
             "(known: guides, corpus, sensors). "

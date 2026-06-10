@@ -10,6 +10,7 @@ from keystone_mcp.harness_scaffold import (
     render_adapter_readme,
     render_agent_menu,
     render_guide,
+    render_script,
     render_sensor,
     render_skill,
 )
@@ -18,23 +19,23 @@ from keystone_mcp.harness_scaffold import (
 # Render functions ---------------------------------------------------------
 
 
-def test_render_guide_iron_law_section_present():
-    out = render_guide("dangerous-actions", "iron-law")
+def test_render_guide_non_negotiable_section_present():
+    out = render_guide("dangerous-actions", "non-negotiable")
     assert out.startswith("# Dangerous Actions\n")
-    assert "## IRON LAW" in out
-    assert "NEVER OR ALWAYS" in out
+    assert "## NON-NEGOTIABLE" in out
+    assert "never be violated" in out
 
 
 def test_render_guide_rules_default():
     out = render_guide("anything", "rules")
     assert "## RULES" in out
-    assert "MUST <rule one>" in out
+    assert "<regular rule" in out
 
 
-def test_render_guide_golden_tier():
-    out = render_guide("aspirational", "golden")
-    assert "## GOLDEN RULES" in out
-    assert "Aim to" in out
+def test_render_guide_strong_tier():
+    out = render_guide("preferred", "strong")
+    assert "## STRONG" in out
+    assert "deviation requires explicit reasoning" in out
 
 
 def test_render_guide_invalid_tier_raises():
@@ -42,15 +43,39 @@ def test_render_guide_invalid_tier_raises():
         render_guide("x", "bogus")
 
 
+def test_render_guide_rejects_old_tier_names():
+    # The rename dropped the legacy keystone names.
+    with pytest.raises(ScaffoldError):
+        render_guide("x", "iron-law")
+    with pytest.raises(ScaffoldError):
+        render_guide("x", "golden")
+
+
 def test_render_sensor_writes_frontmatter():
     out = render_sensor("build", "computational")
-    assert out.startswith("---\nkind: computational\n---")
+    assert "kind: computational" in out
+    assert "script: build.sh" in out
+    assert out.startswith("---\n")
     assert "# Sensor: build" in out
+    assert "blocking" in out
+
+
+def test_render_sensor_custom_script_name():
+    out = render_sensor("lint", "lint", script="custom.sh")
+    assert "script: custom.sh" in out
 
 
 def test_render_sensor_invalid_kind_raises():
     with pytest.raises(ScaffoldError, match="sensor kind"):
         render_sensor("x", "bogus")
+
+
+def test_render_script_emits_executable_bash():
+    out = render_script("build")
+    assert out.startswith("#!/usr/bin/env bash")
+    assert "set -euo pipefail" in out
+    assert "Sensor script: build" in out
+    assert "exit 1" in out
 
 
 def test_render_skill_writes_frontmatter():
@@ -136,10 +161,10 @@ def test_new_guide_overwrites_with_force(tmp_path):
     s.bootstrap()
     s.new_guide("x", tier="rules")
     original = (s.root / "guides" / "x.md").read_text()
-    s.new_guide("x", tier="golden", force=True)
+    s.new_guide("x", tier="strong", force=True)
     updated = (s.root / "guides" / "x.md").read_text()
     assert original != updated
-    assert "## GOLDEN RULES" in updated
+    assert "## STRONG" in updated
 
 
 def test_new_guide_invalid_name_rejected(tmp_path):
@@ -150,15 +175,65 @@ def test_new_guide_invalid_name_rejected(tmp_path):
         s.new_guide("")
 
 
-def test_new_sensor_writes_file(tmp_path):
+def test_new_sensor_writes_sensor_and_script(tmp_path):
     s = _scaffold(tmp_path)
     s.bootstrap()
     result = s.new_sensor("build", kind="build")
+    paths = [Path(p) for p in result["created"]]
+    assert s.root / "sensors" / "build.md" in paths
+    assert s.root / "scripts" / "build.sh" in paths
+    sensor_body = (s.root / "sensors" / "build.md").read_text()
+    assert "kind: build" in sensor_body
+    assert "script: build.sh" in sensor_body
+    assert "Sensor: build" in sensor_body
+    # Script is chmod +x
+    script_path = s.root / "scripts" / "build.sh"
+    assert script_path.stat().st_mode & 0o111
+
+
+def test_new_sensor_force_does_not_overwrite_script(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    s.new_sensor("build", kind="build")
+    custom_body = "#!/usr/bin/env bash\nmake build\n"
+    (s.root / "scripts" / "build.sh").write_text(custom_body)
+    s.new_sensor("build", kind="build", force=True)
+    assert (s.root / "scripts" / "build.sh").read_text() == custom_body
+
+
+def test_new_script_writes_executable_with_default_body(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    result = s.new_script("deploy")
     path = Path(result["created"][0])
-    assert path == s.root / "sensors" / "build.md"
-    body = path.read_text()
-    assert "kind: build" in body
-    assert "Sensor: build" in body
+    assert path == s.root / "scripts" / "deploy.sh"
+    assert path.stat().st_mode & 0o111
+    assert path.read_text().startswith("#!/usr/bin/env bash")
+
+
+def test_new_script_accepts_explicit_body(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    body = "#!/bin/sh\necho hi\n"
+    s.new_script("hello", body=body)
+    assert (s.root / "scripts" / "hello.sh").read_text() == body
+
+
+def test_new_script_refuses_overwrite_without_force(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    s.new_script("x")
+    second = s.new_script("x")
+    assert second["created"] == []
+    assert len(second["skipped"]) == 1
+
+
+def test_new_script_overwrites_with_force(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    s.new_script("x", body="A")
+    s.new_script("x", body="B", force=True)
+    assert (s.root / "scripts" / "x.sh").read_text() == "B"
 
 
 def test_new_skill_creates_subdir_with_SKILL_md(tmp_path):
@@ -276,7 +351,7 @@ def test_status_when_root_missing(tmp_path):
 
 def test_options_catalog_lists_choices():
     cat = options_catalog()
-    assert "iron-law" in cat["guide_tiers"]
+    assert set(cat["guide_tiers"]) == {"non-negotiable", "strong", "rules"}
     assert "build" in cat["sensor_kinds"]
     assert "claude-code" in cat["supported_agents"]
     assert "CLAUDE.md" in cat["agent_menu_files"]["claude-code"]

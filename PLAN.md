@@ -778,6 +778,67 @@ prompts, plus N skill:// resources auto-discovered from
 
 Phases 14c (shipped scripts) and 14d (proactive rule injection) to follow.
 
+## Phase 14c — sensors as commands + shipped scripts + cascade rename (shipped)
+
+**Goal:** make sensors first-class blocking rules. Each sensor markdown is
+WHAT to check; the matching shell script under `scripts/` is HOW to check.
+Agent runs the script during the verify phase; any non-zero exit halts the
+workflow. Also folds in a cascade rename driven by the user.
+
+Two-axis model (Phase 14c scope = computational sensors):
+
+|         | Computational            | Inferential                    |
+|---------|--------------------------|--------------------------------|
+| Guide   | tool-enforced config     | markdown the agent reads       |
+|         | (lives next to harness)  | (rule kind, cascade tier)      |
+| Sensor  | shell script, exit=pass  | agent prompt, judges pass      |
+|         | (shipped in 14c)         | (deferred to 14e)              |
+
+Strictness cascade (third axis): **non-negotiable > strong > rules**.
+
+Shipped:
+- `scripts/` added to `BOOTSTRAP_DIRS`.
+- `render_script(name)` template — `#!/usr/bin/env bash`, `set -euo
+  pipefail`, exit 1 stub.
+- `Scaffold.new_script(name, body=?)` writes
+  `<root>/scripts/<name>.sh` (chmod +x). Idempotent; `force=True`
+  replaces.
+- `Scaffold.new_sensor(name, kind)` now writes BOTH the sensor markdown
+  AND the matching `scripts/<name>.sh` stub. Forcing a sensor refresh
+  never clobbers an existing script (user's edits are preserved).
+- Sensor template gains `script: <name>.sh` frontmatter line + an
+  explicit `**Run** — .keystone/harness/scripts/<name>.sh` bullet.
+- Harness adapter:
+  - Tiny `_parse_frontmatter` helper (small flat YAML, no PyYAML dep).
+  - Sensors now emit `command` kind (NOT `skill`). Invocation pulled
+    from frontmatter `script:` field, resolved to
+    `.keystone/harness/scripts/<name>` so the agent can shell out
+    directly. Empty invocation when no `script:` field is present
+    (e.g., descriptive-only sensors).
+- `harness_new_script` MCP tool exposed for ad-hoc scripts.
+- `task` prompt — verify phase rewritten to enforce **halt on any
+  non-zero sensor exit**, with explicit instructions to invoke each
+  sensor's `invocation` field via Bash.
+
+Cascade rename (driven by user clarification during 14c):
+- Tier names: `iron-law` → `non-negotiable`, `golden` → `strong`,
+  `rules` unchanged.
+- Severity mapping fix: previously RULES tier mapped to `must` (broke
+  the cascade). Now: non-negotiable → `must`, strong → `should`,
+  rules → `may`. Bullet-level MUST/SHOULD/MAY prefix still overrides.
+- Old keystone headings (`IRON LAW`, `GOLDEN RULES`) still recognized
+  by the adapter for backward compat. Tier arguments to
+  `harness_new_guide` use the new names only.
+- Guide templates updated: `## NON-NEGOTIABLE`, `## STRONG`, `## RULES`.
+- `options_catalog()` reflects the new tier names.
+
+23 new/changed tests. 258 total. Surface: 9 tools (added
+`harness_new_script`), 3 static resources, 2 resource templates,
+4 prompts, plus N skill:// auto-discovered.
+
+Phase 14d (proactive rule injection) and 14e (inferential sensors)
+to follow.
+
 ## Phase 12+ — remaining open work
 
 - **Packaging.** Publish to PyPI and wire `uvx keystone-mcp` as the

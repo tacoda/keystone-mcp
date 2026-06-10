@@ -138,8 +138,10 @@ def build_server() -> FastMCP:
     ) -> dict:
         """Scaffold a new guide markdown file under `.keystone/harness/guides/`.
 
-        `tier` ∈ iron-law | rules | golden. Tier determines the section
-        heading and default severity of bullets inside it.
+        `tier` ∈ non-negotiable | strong | rules. Strictness cascade:
+        non-negotiable (can never be violated) > strong (hard rule;
+        deviation requires explicit reasoning) > rules (regular rule;
+        strong rules can override).
         """
         return Scaffold(HARNESS_ROOT).new_guide(name, tier=tier, force=force)
 
@@ -147,13 +149,31 @@ def build_server() -> FastMCP:
     async def harness_new_sensor(
         name: str, kind: str = "custom", force: bool = False
     ) -> dict:
-        """Scaffold a new sensor markdown file under `.keystone/harness/sensors/`.
+        """Scaffold a new sensor + its matching shell script.
+
+        Sensors are blocking rules — the agent must run them and they must
+        pass for the workflow to continue. Writes:
+          - `.keystone/harness/sensors/<name>.md` (description + metadata)
+          - `.keystone/harness/scripts/<name>.sh` (executable stub)
 
         `kind` ∈ lint | type | test | build | drift | coverage |
-        computational | domain | custom. Sensors describe automated checks;
-        the actual invocation lives in project state.
+        computational | domain | custom. The script is chmod +x and exits
+        non-zero until the body is filled in.
         """
         return Scaffold(HARNESS_ROOT).new_sensor(name, kind=kind, force=force)
+
+    @mcp.tool
+    async def harness_new_script(
+        name: str, body: str | None = None, force: bool = False
+    ) -> dict:
+        """Scaffold a shell script under `.keystone/harness/scripts/<name>.sh`.
+
+        Use this to drop a script body without a sensor wrapper, or to
+        refresh an existing script (with `force=True`). New scripts are
+        chmod +x. Most projects scaffold sensors via `harness_new_sensor`
+        which stamps the matching script automatically.
+        """
+        return Scaffold(HARNESS_ROOT).new_script(name, body=body, force=force)
 
     @mcp.tool
     async def harness_new_skill(

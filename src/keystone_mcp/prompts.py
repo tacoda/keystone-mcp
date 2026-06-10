@@ -120,11 +120,19 @@ each phase, **pause for explicit user acceptance** before moving on.
    heavyweight sensors. Read sensors via `context://` if the harness has
    them configured.
 
-6. **verify.** Run the project's sensors (lint, type-check, test, build,
-   drift, commit-message). Use the project's scripts under
-   `.keystone/harness/scripts/` if present; otherwise invoke directly via
-   the Bash tool. Iron law: **No completion claims without fresh
-   verification evidence — sensors must run this turn.**
+6. **verify.** Sensors are **blocking rules** — they MUST pass for this
+   phase to clear. Read `context://{{topic}}` for any topic backed by the
+   harness adapter `sensors` query (or read `harness://status` to
+   enumerate), then for each sensor:
+   - Invoke its `invocation` field (the shell script under
+     `.keystone/harness/scripts/`) via the Bash tool.
+   - Capture exit code + stdout/stderr.
+   - **Halt** if any sensor exits non-zero. Surface the failure to the
+     user and propose a fix; do not proceed to review or claim
+     completion. Iron law: **no proceeding past a failed sensor.**
+
+   Iron law: **No completion claims without fresh verification evidence —
+   sensors must run this turn.**
 
 7. **review.** Functional, security, risk, and deployment review against
    the acceptance criteria from phase 1.

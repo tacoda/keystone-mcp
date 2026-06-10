@@ -34,12 +34,13 @@ BOOTSTRAP_DIRS = (
     "corpus/state",
     "skills",
     "sensors",
+    "scripts",
     "adapters",
     "learning/inbox",
     "archive",
 )
 
-GUIDE_TIERS = ("iron-law", "rules", "golden")
+GUIDE_TIERS = ("non-negotiable", "strong", "rules")
 SENSOR_KINDS = (
     "lint",
     "type",
@@ -68,9 +69,23 @@ SUPPORTED_AGENTS = (
 
 
 _GUIDE_SECTIONS: dict[str, str] = {
-    "iron-law": "## IRON LAW\n\n**<NEVER OR ALWAYS STATEMENT IN ALL CAPS BOLD>.**\n",
-    "rules": "## RULES\n\n- MUST <rule one>.\n- SHOULD <rule two>.\n- <granular rule with no explicit severity>.\n",
-    "golden": "## GOLDEN RULES\n\n- Aim to <aspirational rule>.\n- Aim to <another aspiration>.\n",
+    # Strictness cascade: non-negotiable > strong > rules.
+    # Bullet-level MUST/SHOULD/MAY prefix still overrides the tier default.
+    "non-negotiable": (
+        "## NON-NEGOTIABLE\n\n"
+        "**<NEVER OR ALWAYS STATEMENT IN ALL CAPS BOLD — this rule can never "
+        "be violated>.**\n"
+    ),
+    "strong": (
+        "## STRONG\n\n"
+        "- <hard rule; deviation requires explicit reasoning>.\n"
+        "- <another hard rule>.\n"
+    ),
+    "rules": (
+        "## RULES\n\n"
+        "- <regular rule; strong rules and non-negotiables can override>.\n"
+        "- <another regular rule>.\n"
+    ),
 }
 
 
@@ -91,20 +106,42 @@ def render_guide(name: str, tier: str) -> str:
     )
 
 
-def render_sensor(name: str, kind: str) -> str:
+def render_sensor(name: str, kind: str, script: str | None = None) -> str:
+    """Render a sensor markdown file.
+
+    Sensors are computational, blocking rules — the agent must run them
+    and they must pass before the workflow can continue. Each sensor
+    points at a shell script under `scripts/` that does the actual check.
+    """
     if kind not in SENSOR_KINDS:
         raise ScaffoldError(
             f"sensor kind must be one of {list(SENSOR_KINDS)}, got {kind!r}"
         )
+    script_name = script or f"{name}.sh"
     return (
-        f"---\nkind: {kind}\n---\n\n"
+        f"---\nkind: {kind}\nscript: {script_name}\n---\n\n"
         f"# Sensor: {name}\n\n"
-        "What this sensor checks.\n\n"
+        "What this sensor checks. This is a **blocking** rule — the agent "
+        "must run it and it must pass for the workflow to continue.\n\n"
+        f"- **Run** — `.keystone/harness/scripts/{script_name}`\n"
         "- **Trigger** — when it runs (e.g. verification phase gate).\n"
-        "- **Inputs** — what data it reads from `corpus/state/`.\n"
-        "- **Exit condition** — pass/fail criterion.\n"
-        "- **Output** — pass/fail.\n"
+        "- **Inputs** — what the script reads (files, env vars).\n"
+        "- **Exit condition** — pass = exit 0; fail = non-zero.\n"
+        "- **Output** — pass/fail; on fail, stdout/stderr surface the cause.\n"
         "- **State writes** — none, or the state files it updates.\n"
+    )
+
+
+def render_script(name: str) -> str:
+    """Render an executable shell script body for a sensor."""
+    return (
+        "#!/usr/bin/env bash\n"
+        f"# Sensor script: {name}\n"
+        "# Exit 0 = pass, non-zero = fail. The agent halts the workflow on "
+        "any non-zero exit.\n"
+        "set -euo pipefail\n\n"
+        f"echo '{name}: not yet implemented' >&2\n"
+        "exit 1\n"
     )
 
 
@@ -296,11 +333,62 @@ class Scaffold:
         ).to_dict()
 
     def new_sensor(
-        self, name: str, *, kind: str = "custom", force: bool = False
+        self,
+        name: str,
+        *,
+        kind: str = "custom",
+        force: bool = False,
     ) -> dict[str, list[str]]:
+        """Scaffold a sensor markdown file AND its matching script stub.
+
+        Sensors are blocking rules; the script is what the agent actually
+        executes. Both files are created idempotently — `force` overwrites
+        an existing sensor markdown but the script is still skipped if
+        present (use `new_script` with `force=True` to refresh a script).
+        """
         _validate_name(name, "sensor")
-        path = self._root / "sensors" / f"{name}.md"
-        created, p = _write(path, render_sensor(name, kind), force=force)
+        script_name = f"{name}.sh"
+        sensor_path = self._root / "sensors" / f"{name}.md"
+        script_path = self._root / "scripts" / script_name
+
+        result = WriteResult([], [])
+        sensor_created, sp = _write(
+            sensor_path, render_sensor(name, kind, script=script_name), force=force
+        )
+        (result.created if sensor_created else result.skipped).append(sp)
+
+        # Stamp the matching script stub. Always non-forced — even when the
+        # caller forces the sensor refresh, don't blow away script content.
+        script_created, scp = _write(
+            script_path, render_script(name), force=False
+        )
+        if script_created:
+            script_path.chmod(0o755)
+            result.created.append(scp)
+        else:
+            result.skipped.append(scp)
+
+        return result.to_dict()
+
+    def new_script(
+        self,
+        name: str,
+        *,
+        body: str | None = None,
+        force: bool = False,
+    ) -> dict[str, list[str]]:
+        """Scaffold (or replace) a shell script under `<root>/scripts/<name>.sh`.
+
+        Sensors call into scripts. Most projects scaffold a sensor with
+        `new_sensor`, which stamps a script stub automatically; use this
+        directly to drop a script body without a sensor wrapper or to
+        replace an existing stub.
+        """
+        _validate_name(name, "script")
+        path = self._root / "scripts" / f"{name}.sh"
+        created, p = _write(path, body or render_script(name), force=force)
+        if created:
+            path.chmod(0o755)
         return WriteResult(
             created=[p] if created else [], skipped=[] if created else [p]
         ).to_dict()
@@ -389,6 +477,16 @@ class Scaffold:
                 if p.is_file() and p.name != "README.md"
             )
             out["subdirs"][sub] = {"present": True, "files": count}
+        scripts_dir = self._root / "scripts"
+        if not scripts_dir.is_dir():
+            out["subdirs"]["scripts"] = {"present": False, "files": 0}
+        else:
+            count = sum(
+                1
+                for p in scripts_dir.iterdir()
+                if p.is_file() and p.name != "README.md"
+            )
+            out["subdirs"]["scripts"] = {"present": True, "files": count}
         skills_dir = self._root / "skills"
         if not skills_dir.is_dir():
             out["subdirs"]["skills"] = {"present": False, "files": 0}

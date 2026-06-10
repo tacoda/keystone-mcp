@@ -79,17 +79,24 @@ async def test_guides_emits_tiered_rules(tmp_path):
     for d in rules:
         by_sev.setdefault(d.severity, []).append(d)
 
-    # IRON LAW (paragraph) → 1 must-severity rule.
-    # RULES (2 bullets) → 2 must-severity rules.
-    musts = by_sev["must"]
-    assert len(musts) == 3
-    assert any("NEVER PERFORM A DANGEROUS ACTION" in d.text for d in musts)
-    assert any("Show, then confirm." in d.text for d in musts)
+    # Cascade: non-negotiable (must) > strong (should) > rules (may).
+    # The fixture uses legacy headings (IRON LAW, GOLDEN RULES, RULES) —
+    # those still map to the same tiers for backward compat.
 
-    # GOLDEN RULES → 2 should-severity rules.
+    # IRON LAW (paragraph, must) → 1 doc
+    musts = by_sev["must"]
+    assert len(musts) == 1
+    assert "NEVER PERFORM A DANGEROUS ACTION" in musts[0].text
+
+    # GOLDEN RULES (2 bullets, should) → 2 docs
     shoulds = by_sev["should"]
     assert len(shoulds) == 2
     assert all("Aim to" in d.text for d in shoulds)
+
+    # RULES (2 bullets, may) → 2 docs (un-prefixed bullets default to may)
+    mays = by_sev["may"]
+    assert len(mays) == 2
+    assert any("Show, then confirm." in d.text for d in mays)
 
 
 async def test_guides_emits_anti_patterns_as_reasoning(tmp_path):
@@ -114,13 +121,42 @@ async def test_guides_severity_prefix_overrides_tier_default(tmp_path):
     )
     docs = await _adapter(tmp_path).fetch({"type": "guides"}, {})
     sevs = [d.severity for d in docs if d.kind == "rule"]
-    assert sevs == ["should", "may", "must"]
+    # RULES tier defaults to `may`; bullet-level prefix wins when present.
+    assert sevs == ["should", "may", "may"]
     texts = [d.text for d in docs if d.kind == "rule"]
     assert texts == [
         "prefer dataclasses.",
         "use protocols.",
         "(no prefix) avoid global state.",
     ]
+
+
+async def test_guides_new_tier_names_recognized(tmp_path):
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides" / "new.md").write_text(
+        """# new
+
+## NON-NEGOTIABLE
+
+**Never push directly to main.**
+
+## STRONG
+
+- Run sensors before commit.
+
+## RULES
+
+- Prefer dataclasses.
+"""
+    )
+    docs = await _adapter(tmp_path).fetch({"type": "guides"}, {})
+    by_sev = {}
+    for d in docs:
+        if d.kind == "rule":
+            by_sev.setdefault(d.severity, []).append(d.text)
+    assert any("Never push" in t for t in by_sev["must"])
+    assert any("Run sensors" in t for t in by_sev["should"])
+    assert any("Prefer dataclasses" in t for t in by_sev["may"])
 
 
 async def test_guides_skips_readme(tmp_path):
@@ -186,12 +222,34 @@ async def test_playbooks_query_type_removed(tmp_path):
         await _adapter(tmp_path).fetch({"type": "playbooks"}, {})
 
 
-async def test_sensors_emit_skills(tmp_path):
+async def test_sensors_emit_commands_with_script_invocation(tmp_path):
     _build_min_harness(tmp_path)
     docs = await _adapter(tmp_path).fetch({"type": "sensors"}, {})
-    assert [d.kind for d in docs] == ["skill"]
+    assert [d.kind for d in docs] == ["command"]
     assert docs[0].name == "build"
+    # The fixture sensor has frontmatter `kind: computational` but no script
+    # field, so invocation is empty.
+    assert docs[0].invocation == ""
     assert "build / compile / package" in docs[0].text
+
+
+async def test_sensors_pulls_invocation_from_frontmatter(tmp_path):
+    (tmp_path / "sensors").mkdir()
+    (tmp_path / "sensors" / "lint.md").write_text(
+        """---
+kind: lint
+script: lint.sh
+---
+
+# Sensor: lint
+
+Static check.
+"""
+    )
+    docs = await _adapter(tmp_path).fetch({"type": "sensors"}, {})
+    assert len(docs) == 1
+    assert docs[0].kind == "command"
+    assert docs[0].invocation == ".keystone/harness/scripts/lint.sh"
 
 
 async def test_unknown_query_type_raises(tmp_path):
