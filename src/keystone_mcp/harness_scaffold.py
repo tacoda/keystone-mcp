@@ -198,9 +198,14 @@ _MENU_TEMPLATE = (
     "by the `keystone-mcp` server. The entire `.keystone/` directory is\n"
     "version-controlled and shared with the team. **Never put secrets\n"
     "there** — reference env vars via `env:VAR` in `.keystone/context.yaml`.\n\n"
-    "**At session start** — load these files directly:\n"
-    "- `{harness_root}/guides/**.md` — rules (IRON LAW / RULES / GOLDEN RULES).\n"
-    "- `{harness_root}/corpus/**.md` — long-form reasoning, on demand.\n\n"
+    "**Strictness cascade** for rules in `{harness_root}/guides/`:\n"
+    "  1. **Non-negotiable** — can never be violated.\n"
+    "  2. **Strong** — preferred path; deviation requires explicit reasoning.\n"
+    "  3. **Rules** — regular rules; strong rules can override.\n\n"
+    "Non-negotiable and strong rules are inlined below at write time so the\n"
+    "agent sees them at session start. Regular rules and reasoning load on\n"
+    "demand via MCP. Re-run `harness_target_add(agent, force=True)` after\n"
+    "editing guides to refresh this file.\n\n"
     "**At session time** — call the MCP server:\n"
     "- `list_topics()` (tool) — discover configured topics.\n"
     "- `get_context(topic)` (tool) — full envelope (rules + reasoning + skills + commands).\n"
@@ -211,6 +216,83 @@ _MENU_TEMPLATE = (
     "default root is `.keystone/harness`. See the keystone-mcp README for\n"
     "adapter and topic configuration.\n"
 )
+
+
+# Cascade-section heading names recognized by the menu extractor. Both the
+# new names and the legacy keystone names are accepted, mirroring the
+# harness adapter.
+_NON_NEGOTIABLE_HEADINGS = {"non-negotiable", "non negotiable", "iron law", "iron laws"}
+_STRONG_HEADINGS = {"strong", "golden rule", "golden rules"}
+
+_H2_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+
+
+def _split_h2(body: str) -> list[tuple[str, str]]:
+    matches = list(_H2_RE.finditer(body))
+    out: list[tuple[str, str]] = []
+    for i, m in enumerate(matches):
+        heading = m.group(1).strip()
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
+        out.append((heading, body[start:end].strip()))
+    return out
+
+
+def extract_tier_sections(
+    harness_root: str | Path,
+) -> dict[str, list[tuple[str, str]]]:
+    """Walk `<harness_root>/guides/**/*.md` and extract tiered sections.
+
+    Returns `{"non-negotiable": [(rel_path, body), ...], "strong": [...]}`.
+    Used by `target_add` to inline non-negotiable + strong rules into the
+    project-root menu file so the agent has them at session start without
+    an MCP call.
+
+    `README.md` files are skipped.
+    """
+    root = Path(harness_root).expanduser().resolve()
+    out: dict[str, list[tuple[str, str]]] = {
+        "non-negotiable": [],
+        "strong": [],
+    }
+    guides_dir = root / "guides"
+    if not guides_dir.is_dir():
+        return out
+    for path in sorted(guides_dir.rglob("*.md")):
+        if path.name == "README.md" or not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        rel = str(path.relative_to(root))
+        for heading, body in _split_h2(text):
+            lower = heading.lower().strip(":.")
+            if lower in _NON_NEGOTIABLE_HEADINGS and body.strip():
+                out["non-negotiable"].append((rel, body.strip()))
+            elif lower in _STRONG_HEADINGS and body.strip():
+                out["strong"].append((rel, body.strip()))
+    return out
+
+
+def _format_inlined_rules(
+    sections: dict[str, list[tuple[str, str]]],
+) -> str:
+    parts: list[str] = []
+    if sections.get("non-negotiable"):
+        parts.append("\n## Non-negotiable rules\n\n")
+        parts.append("These rules can never be violated. No mode loosens them.\n\n")
+        for source, body in sections["non-negotiable"]:
+            parts.append(f"### From `{source}`\n\n{body}\n\n")
+    if sections.get("strong"):
+        parts.append("\n## Strong rules\n\n")
+        parts.append(
+            "Preferred-path rules. Deviation is allowed only with explicit\n"
+            "reasoning surfaced to the user.\n\n"
+        )
+        for source, body in sections["strong"]:
+            parts.append(f"### From `{source}`\n\n{body}\n\n")
+    return "".join(parts)
 
 
 _AGENT_MENU_FILES: dict[str, tuple[str, ...]] = {
@@ -234,8 +316,15 @@ def menu_files_for(agent: str) -> tuple[str, ...]:
     return _AGENT_MENU_FILES[agent]
 
 
-def render_agent_menu(harness_root: str) -> str:
-    return _MENU_TEMPLATE.format(harness_root=harness_root)
+def render_agent_menu(
+    harness_root: str,
+    *,
+    sections: dict[str, list[tuple[str, str]]] | None = None,
+) -> str:
+    base = _MENU_TEMPLATE.format(harness_root=harness_root)
+    if not sections:
+        return base
+    return base + _format_inlined_rules(sections)
 
 
 # Write primitives ---------------------------------------------------------
@@ -441,13 +530,18 @@ class Scaffold:
     ) -> dict[str, list[str]]:
         """Install the agent menu file(s) at the project root.
 
-        `project_root` is the directory that holds (or will hold) the agent
-        activation files (e.g. CLAUDE.md). It defaults to "." and is resolved
-        relative to the process CWD.
+        Non-negotiable and strong rules from `<harness>/guides/` are
+        extracted and inlined at write time so the agent reads them at
+        session start without an MCP call. Re-run with `force=True` after
+        editing guides to refresh the menu.
+
+        `project_root` is the directory that holds (or will hold) the
+        agent activation files (e.g. CLAUDE.md). Defaults to "." (CWD).
         """
         files = menu_files_for(agent)
         proj = Path(project_root).expanduser().resolve()
-        body = render_agent_menu(self._root.name)
+        sections = extract_tier_sections(self._root)
+        body = render_agent_menu(self._root.name, sections=sections)
         result = WriteResult([], [])
         for rel in files:
             path = proj / rel

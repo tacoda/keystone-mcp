@@ -6,6 +6,7 @@ from keystone_mcp.harness_scaffold import (
     BOOTSTRAP_DIRS,
     Scaffold,
     ScaffoldError,
+    extract_tier_sections,
     options_catalog,
     render_adapter_readme,
     render_agent_menu,
@@ -105,6 +106,37 @@ def test_render_agent_menu_warns_about_secrets():
     out = render_agent_menu(".keystone/harness")
     assert "Never put secrets" in out
     assert "env:VAR" in out
+
+
+def test_render_agent_menu_documents_strictness_cascade():
+    out = render_agent_menu(".keystone/harness")
+    assert "Non-negotiable" in out
+    assert "Strong" in out
+    assert "preferred path" in out.lower() or "preferred-path" in out.lower()
+
+
+def test_render_agent_menu_inlines_provided_sections():
+    sections = {
+        "non-negotiable": [
+            ("guides/dangerous.md", "**NEVER push to main directly.**"),
+        ],
+        "strong": [
+            ("guides/quality.md", "- Run sensors before commit."),
+        ],
+    }
+    out = render_agent_menu(".keystone/harness", sections=sections)
+    assert "## Non-negotiable rules" in out
+    assert "NEVER push to main directly" in out
+    assert "guides/dangerous.md" in out
+    assert "## Strong rules" in out
+    assert "Run sensors before commit" in out
+    assert "guides/quality.md" in out
+
+
+def test_render_agent_menu_empty_sections_omits_inlined_sections():
+    out = render_agent_menu(".keystone/harness", sections=None)
+    assert "## Non-negotiable rules" not in out
+    assert "## Strong rules" not in out
 
 
 # Scaffold (write side) ----------------------------------------------------
@@ -284,6 +316,107 @@ def test_target_add_writes_menu_file_at_project_root(tmp_path):
     assert "get_context(topic)" in body
     assert "harness/" in body
     assert "Never put secrets" in body
+
+
+def test_target_add_inlines_non_negotiable_and_strong_rules(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    # Drop a guide with both tiers.
+    (s.root / "guides" / "dangerous.md").write_text(
+        """# Dangerous
+
+## NON-NEGOTIABLE
+
+**Never push directly to main.**
+
+## STRONG
+
+- Run sensors before commit.
+
+## RULES
+
+- Prefer dataclasses.
+"""
+    )
+    project = tmp_path / "proj"
+    project.mkdir()
+    s.target_add("claude-code", project_root=project)
+    body = (project / "CLAUDE.md").read_text()
+    assert "Never push directly to main." in body
+    assert "Run sensors before commit." in body
+    # Regular rules are NOT inlined — they load on demand via MCP.
+    assert "Prefer dataclasses." not in body
+
+
+def test_target_add_refresh_picks_up_rule_edits(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    (s.root / "guides" / "x.md").write_text(
+        "# x\n\n## NON-NEGOTIABLE\n\n**Original rule.**\n"
+    )
+    project = tmp_path / "proj"
+    project.mkdir()
+    s.target_add("claude-code", project_root=project)
+    first = (project / "CLAUDE.md").read_text()
+    assert "Original rule" in first
+
+    # Edit the guide. target_add(force=True) should regenerate.
+    (s.root / "guides" / "x.md").write_text(
+        "# x\n\n## NON-NEGOTIABLE\n\n**Updated rule.**\n"
+    )
+    s.target_add("claude-code", project_root=project, force=True)
+    second = (project / "CLAUDE.md").read_text()
+    assert "Updated rule" in second
+    assert "Original rule" not in second
+
+
+def test_extract_tier_sections_returns_empty_when_no_guides(tmp_path):
+    sections = extract_tier_sections(tmp_path)
+    assert sections == {"non-negotiable": [], "strong": []}
+
+
+def test_extract_tier_sections_walks_nested_guides(tmp_path):
+    (tmp_path / "guides" / "process").mkdir(parents=True)
+    (tmp_path / "guides" / "process" / "a.md").write_text(
+        "# a\n\n## NON-NEGOTIABLE\n\nrule A.\n\n## STRONG\n\n- rule B.\n"
+    )
+    (tmp_path / "guides" / "b.md").write_text(
+        "# b\n\n## STRONG\n\n- rule C.\n"
+    )
+    sections = extract_tier_sections(tmp_path)
+    nn = sections["non-negotiable"]
+    strong = sections["strong"]
+    assert len(nn) == 1
+    assert "rule A" in nn[0][1]
+    assert nn[0][0] == "guides/process/a.md"
+    assert len(strong) == 2
+    sources = sorted(s for s, _ in strong)
+    assert sources == ["guides/b.md", "guides/process/a.md"]
+
+
+def test_extract_tier_sections_recognizes_legacy_headings(tmp_path):
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides" / "legacy.md").write_text(
+        "# legacy\n\n## IRON LAW\n\n**Legacy IRON LAW text.**\n\n"
+        "## GOLDEN RULES\n\n- Legacy golden rule.\n"
+    )
+    sections = extract_tier_sections(tmp_path)
+    assert any("IRON LAW text" in body for _, body in sections["non-negotiable"])
+    assert any("Legacy golden rule" in body for _, body in sections["strong"])
+
+
+def test_extract_tier_sections_skips_readme(tmp_path):
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "guides" / "README.md").write_text(
+        "## NON-NEGOTIABLE\n\nshould-not-show.\n"
+    )
+    (tmp_path / "guides" / "real.md").write_text(
+        "## NON-NEGOTIABLE\n\nincluded.\n"
+    )
+    sections = extract_tier_sections(tmp_path)
+    bodies = [b for _, b in sections["non-negotiable"]]
+    assert "included." in bodies
+    assert not any("should-not-show" in b for b in bodies)
 
 
 def test_target_add_cursor_writes_nested_path(tmp_path):

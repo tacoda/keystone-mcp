@@ -840,6 +840,47 @@ Cascade rename (driven by user clarification during 14c):
 Phase 14d (proactive rule injection) and 14e (inferential sensors)
 to follow.
 
+## Phase 14d — proactive rule injection (shipped)
+
+**Goal:** stitch non-negotiable + strong rules into the agent's menu file at
+project root so they auto-load at session start. Regular rules and reasoning
+keep loading on demand via MCP. Closes open Q6.
+
+Rationale (strictness cascade, from Phase 14c):
+- **non-negotiable** rules can never be violated → must be present at
+  session start, no MCP round-trip permitted.
+- **strong** rules are preferred-path; deviation requires explicit
+  reasoning → also present at session start so the agent acknowledges
+  them before considering deviation.
+- **rules** (regular) → load on demand. Avoids bloating the menu and the
+  agent's context window.
+
+Shipped:
+- `extract_tier_sections(harness_root)` walks
+  `<harness_root>/guides/**/*.md`, picks H2 sections matching the
+  non-negotiable / strong heading sets (new names + legacy keystone
+  names), returns `{tier: [(rel_path, body), ...]}`.
+- `_format_inlined_rules(sections)` renders extracted sections into a
+  markdown block with explicit source citations
+  (`### From \`guides/<path>\``).
+- `render_agent_menu(harness_root, sections=?)` appends the inlined rules
+  to the base pointer template. With `sections=None` (no rules to inline)
+  the menu degrades to the pointer-only shape.
+- Menu template documents the strictness cascade up front and tells the
+  agent to re-run `harness_target_add(agent, force=True)` after editing
+  guides to refresh the inlined rules.
+- `Scaffold.target_add` now extracts sections from its own harness root
+  and passes them through. Existing tool signature unchanged.
+- 12 new tests covering: extraction (empty, nested guides, legacy
+  headings, README skip), menu inlining (with sections, without sections,
+  cascade documentation), and target_add round-trip (rule edits propagate
+  to the menu via `force=True`).
+
+258 → 266 tests.
+
+Phase 14e (inferential sensors — agent invokes a prompt to perform a
+review-style check) is the remaining open thread on the harness side.
+
 ## Phase 12+ — remaining open work
 
 - **Packaging.** Publish to PyPI and wire `uvx keystone-mcp` as the
@@ -852,10 +893,6 @@ to follow.
 - **Secret-store auth** (open Q2). `env:NAME` works but forces secrets into
   shell rc files. Macos Keychain / 1Password CLI integration via a
   `secret:NAME` scheme that calls out at config-load time.
-- **Proactive rule injection** (open Q6). The host could stitch
-  `must`-severity rules from a configured "session-prelude" topic into the
-  system prompt at session start, so the agent has them before the first
-  tool call.
 - **`agents` payload kind.** Same shape as rules/reasoning/skills/commands.
   Deferred from Phase 8 question — revisit when a concrete need appears.
 - **Classifier strength DSL** (open Q4). Defer until a real
@@ -884,9 +921,12 @@ Explicit deferrals. Each closes before the relevant phase ships.
 5. **One server per repo, or one server multi-tenant.** Phase 1 assumes one
    process per consuming repo. Multi-tenant adds real complexity; revisit only
    with concrete demand.
-6. **Proactive rule injection.** Should the host stitch `must`-severity rules
-   into the system prompt at session start, or always rely on the agent calling
-   `get_rules`? Phase 1: tool-call only. Re-open after real-world use.
+6. ~~**Proactive rule injection.**~~ **Closed in Phase 14d.** Menu file
+   at project root (CLAUDE.md / AGENTS.md / .cursor/rules/...) inlines
+   non-negotiable + strong rules verbatim at write time. Regular rules
+   and reasoning continue to load on demand via MCP. Re-run
+   `harness_target_add(agent, force=True)` after editing guides to
+   refresh the inlined rules.
 7. **Write operations.** Should any adapter ever write (comment on a ticket,
    update a page)? Default: no, keep read-only. Re-open only with a clear case.
 
