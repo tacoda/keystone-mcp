@@ -1,7 +1,7 @@
 [project]
 name = "keystone-mcp"
 version = "0.1.0"
-description = "Scenario-aware context broker MCP server — routes agent context requests to Jira, Confluence, Notion, GitHub, and other sources via repo-owned configuration."
+description = "Context broker MCP server — retrieves rules, reasoning, skills, and commands from company resources (markdown, GitHub, Confluence, Notion, Jira, Linear, Slack) via repo-owned topic configuration."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
