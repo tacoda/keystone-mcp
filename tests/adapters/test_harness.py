@@ -252,6 +252,41 @@ Static check.
     assert docs[0].invocation == ".keystone/harness/scripts/lint.sh"
 
 
+async def test_sensors_invocation_inferred_from_matching_prompt(tmp_path):
+    (tmp_path / "sensors").mkdir()
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "sensors" / "code-review.md").write_text(
+        """---
+kind: custom
+---
+
+# Sensor: code-review
+
+Inferential check.
+"""
+    )
+    (tmp_path / "prompts" / "code-review.md").write_text(
+        "# code-review\n\nReview the diff. PASS / FAIL.\n"
+    )
+    docs = await _adapter(tmp_path).fetch({"type": "sensors"}, {})
+    assert len(docs) == 1
+    assert docs[0].kind == "command"
+    assert docs[0].invocation == ".keystone/harness/prompts/code-review.md"
+
+
+async def test_sensors_script_wins_over_prompt_when_both_exist(tmp_path):
+    # If a project somehow has both, the script wins — computational is the
+    # cheaper, more deterministic check; running both would be redundant.
+    (tmp_path / "sensors").mkdir()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "sensors" / "x.md").write_text("# Sensor: x\n\nbody.\n")
+    (tmp_path / "scripts" / "x.sh").write_text("exit 0")
+    (tmp_path / "prompts" / "x.md").write_text("# x\n")
+    docs = await _adapter(tmp_path).fetch({"type": "sensors"}, {})
+    assert docs[0].invocation == ".keystone/harness/scripts/x.sh"
+
+
 async def test_unknown_query_type_raises(tmp_path):
     with pytest.raises(AdapterError, match="unknown query.type"):
         await _adapter(tmp_path).fetch({"type": "bogus"}, {})

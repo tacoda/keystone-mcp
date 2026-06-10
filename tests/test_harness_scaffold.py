@@ -11,6 +11,7 @@ from keystone_mcp.harness_scaffold import (
     render_adapter_readme,
     render_agent_menu,
     render_guide,
+    render_prompt,
     render_script,
     render_sensor,
     render_skill,
@@ -74,6 +75,21 @@ def test_render_script_emits_executable_bash():
     assert "set -euo pipefail" in out
     assert "Sensor script: build" in out
     assert "exit 1" in out
+
+
+def test_render_sensor_inferential_mode_points_at_prompt():
+    out = render_sensor("code-review", "custom", mode="inferential")
+    assert "kind: custom" in out
+    assert ".keystone/harness/prompts/code-review.md" in out
+    assert "agent reads" in out.lower()
+    assert "PASS" in out and "FAIL" in out
+    # Should NOT mention scripts/ when inferential.
+    assert "scripts/" not in out
+
+
+def test_render_sensor_invalid_mode_raises():
+    with pytest.raises(ScaffoldError, match="sensor mode"):
+        render_sensor("x", "lint", mode="bogus")
 
 
 def test_render_skill_writes_frontmatter():
@@ -264,6 +280,65 @@ def test_new_script_overwrites_with_force(tmp_path):
     s.new_script("x", body="A")
     s.new_script("x", body="B", force=True)
     assert (s.root / "scripts" / "x.sh").read_text() == "B"
+
+
+def test_new_sensor_inferential_stamps_prompt_not_script(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    result = s.new_sensor("code-review", kind="custom", mode="inferential")
+    paths = [Path(p) for p in result["created"]]
+    assert s.root / "sensors" / "code-review.md" in paths
+    assert s.root / "prompts" / "code-review.md" in paths
+    # NO matching script.
+    assert not (s.root / "scripts" / "code-review.sh").exists()
+    # Sensor body points at the prompt, not a script.
+    sensor_body = (s.root / "sensors" / "code-review.md").read_text()
+    assert ".keystone/harness/prompts/code-review.md" in sensor_body
+    assert "scripts/" not in sensor_body
+
+
+def test_new_sensor_invalid_mode_raises(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    with pytest.raises(ScaffoldError, match="sensor mode"):
+        s.new_sensor("x", kind="custom", mode="bogus")
+
+
+def test_new_prompt_writes_file(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    result = s.new_prompt("security-review")
+    path = Path(result["created"][0])
+    assert path == s.root / "prompts" / "security-review.md"
+    body = path.read_text()
+    assert "# security-review" in body
+    assert "PASS" in body
+
+
+def test_new_prompt_accepts_explicit_body(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    custom = "# custom\n\nDo the thing.\n"
+    s.new_prompt("custom", body=custom)
+    assert (s.root / "prompts" / "custom.md").read_text() == custom
+
+
+def test_new_prompt_refuses_overwrite_without_force(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    s.new_prompt("x")
+    second = s.new_prompt("x")
+    assert second["created"] == []
+    assert len(second["skipped"]) == 1
+
+
+def test_render_prompt_includes_pass_fail_contract():
+    out = render_prompt("security-review")
+    assert "PASS" in out
+    assert "FAIL" in out
+    # "halts the workflow" can wrap across a newline in the rendered body.
+    collapsed = " ".join(out.split())
+    assert "halts the workflow" in collapsed
 
 
 def test_new_skill_creates_subdir_with_SKILL_md(tmp_path):

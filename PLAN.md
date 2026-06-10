@@ -878,8 +878,64 @@ Shipped:
 
 258 → 266 tests.
 
-Phase 14e (inferential sensors — agent invokes a prompt to perform a
-review-style check) is the remaining open thread on the harness side.
+Phase 14e — inferential sensors — completes the harness side; see below.
+
+## Phase 14e — inferential sensors (shipped)
+
+**Goal:** support the second sensor mode from the two-axis model
+(computational × inferential, established Phase 14c). An inferential
+sensor is a check the agent performs by reasoning — code review,
+security review, risk review — rather than by shelling out. Same
+gating semantics: failure halts the workflow.
+
+Convention-by-name (mirrors the script path from 14c):
+
+  * `<root>/scripts/<name>.sh`  exists → computational; agent runs Bash.
+  * `<root>/prompts/<name>.md`  exists → inferential; agent reads the
+                                         prompt and performs the
+                                         reasoning task.
+  * neither                     → descriptive only; empty invocation.
+
+If both somehow exist, the script wins — computational checks are
+cheaper and more deterministic. The harness adapter resolves at fetch
+time and emits `command` kind with the appropriate file path. Agent
+distinguishes by extension: `.sh` → Bash; `.md` → Read + reason.
+
+Shipped:
+- `prompts/` added to `BOOTSTRAP_DIRS`.
+- `SENSOR_MODES = ("computational", "inferential")` declared.
+- `render_prompt(name)` template — PASS/FAIL contract, scope / checks /
+  pass criteria / fail examples sections.
+- `Scaffold.new_prompt(name, body=?)` writes
+  `<root>/prompts/<name>.md` idempotently.
+- `Scaffold.new_sensor(name, kind=, mode=)`:
+  - `mode="computational"` (default, unchanged) → stamps script stub.
+  - `mode="inferential"` → stamps prompt stub instead. NO matching
+    script created (would defeat the mode signal).
+- `render_sensor(name, kind, mode=)` template branches the "Run" bullet
+  + the rest of the bullet list to match the mode.
+- Harness adapter `_read_sensor_file` probes both `scripts/<name>.sh`
+  and `prompts/<name>.md`; the script wins when both exist.
+- `harness_new_prompt` MCP tool exposed.
+- `harness_new_sensor` MCP tool gains a `mode` parameter.
+- `task` prompt verify phase rewritten again — agent picks behavior
+  from the invocation extension: `.sh` → Bash; `.md` → Read + reason;
+  empty → descriptive-only, skip with a note. Halt on any non-zero
+  exit OR any FAIL verdict.
+- `Scaffold.status()` includes per-subdir count for `prompts/`.
+
+10 new tests covering inferential rendering, the `mode` switch in
+`new_sensor`, `new_prompt`, adapter resolution (script vs prompt
+preference), and PASS/FAIL contract.
+
+266 → 276 tests. Surface: **10 tools** (added `harness_new_prompt`),
+3 static resources, 2 resource templates, 4 prompts.
+
+Two-axis model now fully implemented:
+  - (guide, inferential) → rule kind in envelope (Phase 1–14d)
+  - (sensor, computational) → command kind, .sh invocation (Phase 14c)
+  - (sensor, inferential) → command kind, .md invocation (Phase 14e)
+  - (guide, computational) → out of harness scope (LSP configs in repo)
 
 ## Phase 12+ — remaining open work
 

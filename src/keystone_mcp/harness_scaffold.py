@@ -35,10 +35,13 @@ BOOTSTRAP_DIRS = (
     "skills",
     "sensors",
     "scripts",
+    "prompts",
     "adapters",
     "learning/inbox",
     "archive",
 )
+
+SENSOR_MODES = ("computational", "inferential")
 
 GUIDE_TIERS = ("non-negotiable", "strong", "rules")
 SENSOR_KINDS = (
@@ -106,40 +109,62 @@ def render_guide(name: str, tier: str) -> str:
     )
 
 
-def render_sensor(name: str, kind: str) -> str:
+def render_sensor(name: str, kind: str, *, mode: str = "computational") -> str:
     """Render a sensor markdown file.
 
     Sensors are blocking rules — the agent must run them and they must
     pass for the workflow to continue. Mode (computational vs
-    inferential) is inferred from convention by the harness adapter:
+    inferential) is inferred by convention from which implementation
+    file exists:
 
       * `<root>/scripts/<name>.sh` exists → computational; agent shells
         out to that script.
-      * (planned 14e) matching prompt by name → inferential; agent
-        invokes the prompt to perform the check.
+      * `<root>/prompts/<name>.md` exists → inferential; agent reads the
+        prompt and performs the reasoning task it describes.
 
-    Frontmatter carries metadata only (e.g. `kind:` category).
+    Frontmatter carries metadata only (`kind:` category).
     """
     if kind not in SENSOR_KINDS:
         raise ScaffoldError(
             f"sensor kind must be one of {list(SENSOR_KINDS)}, got {kind!r}"
+        )
+    if mode not in SENSOR_MODES:
+        raise ScaffoldError(
+            f"sensor mode must be one of {list(SENSOR_MODES)}, got {mode!r}"
+        )
+    if mode == "computational":
+        run_line = f"- **Run** — `.keystone/harness/scripts/{name}.sh` (shell)\n"
+        body = (
+            "- **Trigger** — when it runs (e.g. verification phase gate).\n"
+            "- **Inputs** — what the script reads (files, env vars).\n"
+            "- **Exit condition** — pass = exit 0; fail = non-zero.\n"
+            "- **Output** — pass/fail; on fail, stdout/stderr surface the cause.\n"
+            "- **State writes** — none, or the state files it updates.\n"
+        )
+    else:
+        run_line = (
+            f"- **Run** — `.keystone/harness/prompts/{name}.md` "
+            "(agent reads + reasons)\n"
+        )
+        body = (
+            "- **Trigger** — when it runs (e.g. review phase gate).\n"
+            "- **Inputs** — what the agent inspects (diff, files, conventions).\n"
+            "- **Exit condition** — pass = agent reports PASS; fail = agent reports FAIL.\n"
+            "- **Output** — PASS or FAIL with cited findings.\n"
+            "- **State writes** — none.\n"
         )
     return (
         f"---\nkind: {kind}\n---\n\n"
         f"# Sensor: {name}\n\n"
         "What this sensor checks. This is a **blocking** rule — the agent "
         "must run it and it must pass for the workflow to continue.\n\n"
-        f"- **Run** — `.keystone/harness/scripts/{name}.sh`\n"
-        "- **Trigger** — when it runs (e.g. verification phase gate).\n"
-        "- **Inputs** — what the script reads (files, env vars).\n"
-        "- **Exit condition** — pass = exit 0; fail = non-zero.\n"
-        "- **Output** — pass/fail; on fail, stdout/stderr surface the cause.\n"
-        "- **State writes** — none, or the state files it updates.\n"
+        + run_line
+        + body
     )
 
 
 def render_script(name: str) -> str:
-    """Render an executable shell script body for a sensor."""
+    """Render an executable shell script body for a (computational) sensor."""
     return (
         "#!/usr/bin/env bash\n"
         f"# Sensor script: {name}\n"
@@ -148,6 +173,33 @@ def render_script(name: str) -> str:
         "set -euo pipefail\n\n"
         f"echo '{name}: not yet implemented' >&2\n"
         "exit 1\n"
+    )
+
+
+def render_prompt(name: str) -> str:
+    """Render a prompt markdown body for an inferential sensor.
+
+    The agent reads this file, performs the reasoning task it describes,
+    and reports PASS/FAIL. Failure halts the workflow, same as a
+    non-zero exit from a computational sensor.
+    """
+    return (
+        f"# {name}\n\n"
+        f"**Inferential sensor: {name}.**\n\n"
+        "Perform the reasoning task described below against the current\n"
+        "diff (or the relevant region of the codebase). Report a single\n"
+        "verdict at the end: `PASS` or `FAIL: <reason>`. The agent halts\n"
+        "the workflow on any `FAIL`.\n\n"
+        "## Scope\n\n"
+        "<What this sensor inspects — files, modules, behaviors.>\n\n"
+        "## Checks\n\n"
+        "- <First thing to evaluate.>\n"
+        "- <Second thing to evaluate.>\n\n"
+        "## PASS criteria\n\n"
+        "<What \"good\" looks like — concrete, falsifiable.>\n\n"
+        "## FAIL examples\n\n"
+        "- <Example of a finding that warrants FAIL.>\n"
+        "- <Another.>\n"
     )
 
 
@@ -432,37 +484,76 @@ class Scaffold:
         name: str,
         *,
         kind: str = "custom",
+        mode: str = "computational",
         force: bool = False,
     ) -> dict[str, list[str]]:
-        """Scaffold a sensor markdown file AND its matching script stub.
+        """Scaffold a sensor markdown file AND its matching implementation.
 
-        Sensors are blocking rules; the script is what the agent actually
-        executes. Both files are created idempotently — `force` overwrites
-        an existing sensor markdown but the script is still skipped if
-        present (use `new_script` with `force=True` to refresh a script).
+        Sensors are blocking rules; the matching file is what the agent
+        runs. `mode` controls which implementation gets stamped:
+
+          * `computational` (default) → `scripts/<name>.sh` (shell, exec).
+            Agent runs via Bash; exit 0 = pass, non-zero = fail.
+          * `inferential` → `prompts/<name>.md` (prompt). Agent reads,
+            performs the reasoning task, reports PASS / FAIL.
+
+        Existing implementations are preserved — `force=True` overwrites
+        the sensor markdown only; the script/prompt body is never
+        overwritten by `new_sensor` (use `new_script` / `new_prompt`
+        with `force=True` to refresh those).
         """
         _validate_name(name, "sensor")
+        if mode not in SENSOR_MODES:
+            raise ScaffoldError(
+                f"sensor mode must be one of {list(SENSOR_MODES)}, got {mode!r}"
+            )
         sensor_path = self._root / "sensors" / f"{name}.md"
-        script_path = self._root / "scripts" / f"{name}.sh"
-
         result = WriteResult([], [])
+
         sensor_created, sp = _write(
-            sensor_path, render_sensor(name, kind), force=force
+            sensor_path, render_sensor(name, kind, mode=mode), force=force
         )
         (result.created if sensor_created else result.skipped).append(sp)
 
-        # Stamp the matching script stub. Always non-forced — even when the
-        # caller forces the sensor refresh, don't blow away script content.
-        script_created, scp = _write(
-            script_path, render_script(name), force=False
-        )
-        if script_created:
-            script_path.chmod(0o755)
-            result.created.append(scp)
+        if mode == "computational":
+            script_path = self._root / "scripts" / f"{name}.sh"
+            script_created, scp = _write(
+                script_path, render_script(name), force=False
+            )
+            if script_created:
+                script_path.chmod(0o755)
+                result.created.append(scp)
+            else:
+                result.skipped.append(scp)
         else:
-            result.skipped.append(scp)
+            prompt_path = self._root / "prompts" / f"{name}.md"
+            prompt_created, pp = _write(
+                prompt_path, render_prompt(name), force=False
+            )
+            (result.created if prompt_created else result.skipped).append(pp)
 
         return result.to_dict()
+
+    def new_prompt(
+        self,
+        name: str,
+        *,
+        body: str | None = None,
+        force: bool = False,
+    ) -> dict[str, list[str]]:
+        """Scaffold (or replace) a prompt markdown under `<root>/prompts/<name>.md`.
+
+        Sensors with mode `inferential` invoke prompts. Most projects
+        scaffold a sensor with `new_sensor(mode="inferential")` which
+        stamps a prompt stub automatically; use this directly to drop a
+        prompt without a sensor wrapper or to replace an existing stub.
+        """
+        _validate_name(name, "prompt")
+        path = self._root / "prompts" / f"{name}.md"
+        created, p = _write(path, body or render_prompt(name), force=force)
+        return WriteResult(
+            created=[p] if created else [], skipped=[] if created else [p]
+        ).to_dict()
 
     def new_script(
         self,
@@ -576,16 +667,17 @@ class Scaffold:
                 if p.is_file() and p.name != "README.md"
             )
             out["subdirs"][sub] = {"present": True, "files": count}
-        scripts_dir = self._root / "scripts"
-        if not scripts_dir.is_dir():
-            out["subdirs"]["scripts"] = {"present": False, "files": 0}
-        else:
+        for sub in ("scripts", "prompts"):
+            d = self._root / sub
+            if not d.is_dir():
+                out["subdirs"][sub] = {"present": False, "files": 0}
+                continue
             count = sum(
                 1
-                for p in scripts_dir.iterdir()
+                for p in d.iterdir()
                 if p.is_file() and p.name != "README.md"
             )
-            out["subdirs"]["scripts"] = {"present": True, "files": count}
+            out["subdirs"][sub] = {"present": True, "files": count}
         skills_dir = self._root / "skills"
         if not skills_dir.is_dir():
             out["subdirs"]["skills"] = {"present": False, "files": 0}

@@ -11,8 +11,11 @@ encodes the kind of each file:
                           `<root>/scripts/`)
 
 Sensors are *blocking rules* — the agent must run them and they must pass
-for any workflow to continue. The sensor markdown describes WHAT to check;
-the matching shell script under `<root>/scripts/` is HOW to check.
+for any workflow to continue. The sensor markdown describes WHAT to check.
+HOW is inferred by convention from which implementation file exists:
+
+  * `<root>/scripts/<name>.sh`  → computational sensor (shell, exit code)
+  * `<root>/prompts/<name>.md`  → inferential sensor (agent reads + reasons)
 
 Project-local skills live at `<root>/skills/<name>/SKILL.md` and are served
 by FastMCP's `SkillsDirectoryProvider` as `skill://` resources, NOT through
@@ -198,11 +201,16 @@ def _read_sensor_file(
     """Read a sensor file. Sensors emit `command` kind — they are blocking
     rules. Mode (computational / inferential) inferred from convention:
 
-      * scripts/<name>.sh  exists → computational sensor; invocation =
+      * scripts/<name>.sh  exists → computational; invocation =
                                     `.keystone/harness/scripts/<name>.sh`
-      * neither           → descriptive only; empty invocation.
+      * prompts/<name>.md  exists → inferential; invocation =
+                                    `.keystone/harness/prompts/<name>.md`
+      * neither            → descriptive only; empty invocation.
 
-    Inferential sensors (matching prompt by name) land in Phase 14e.
+    Computational invocations end in `.sh` (agent runs via Bash);
+    inferential invocations end in `.md` (agent reads the file and
+    performs the reasoning task it describes). Either failure halts
+    the workflow.
     """
     text = path.read_text(encoding="utf-8")
     if not text.strip():
@@ -210,11 +218,13 @@ def _read_sensor_file(
     body = _strip_frontmatter(text)
     name = path.stem
     script_path = root / "scripts" / f"{name}.sh"
-    invocation = (
-        f".keystone/harness/scripts/{name}.sh"
-        if script_path.is_file()
-        else ""
-    )
+    prompt_path = root / "prompts" / f"{name}.md"
+    if script_path.is_file():
+        invocation = f".keystone/harness/scripts/{name}.sh"
+    elif prompt_path.is_file():
+        invocation = f".keystone/harness/prompts/{name}.md"
+    else:
+        invocation = ""
     return [
         ContextDoc(
             kind="command",

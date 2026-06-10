@@ -147,20 +147,28 @@ def build_server() -> FastMCP:
 
     @mcp.tool
     async def harness_new_sensor(
-        name: str, kind: str = "custom", force: bool = False
+        name: str,
+        kind: str = "custom",
+        mode: str = "computational",
+        force: bool = False,
     ) -> dict:
-        """Scaffold a new sensor + its matching shell script.
+        """Scaffold a new sensor + its matching implementation.
 
-        Sensors are blocking rules — the agent must run them and they must
-        pass for the workflow to continue. Writes:
-          - `.keystone/harness/sensors/<name>.md` (description + metadata)
-          - `.keystone/harness/scripts/<name>.sh` (executable stub)
+        Sensors are blocking rules. `mode` selects how the agent runs them:
+
+          - `computational` (default) → stamps `scripts/<name>.sh` (shell).
+            Agent runs via Bash; exit 0 = pass, non-zero = fail.
+          - `inferential` → stamps `prompts/<name>.md` (markdown).
+            Agent reads the prompt and performs the reasoning task it
+            describes (e.g. code review, security review). Reports
+            PASS / FAIL.
 
         `kind` ∈ lint | type | test | build | drift | coverage |
-        computational | domain | custom. The script is chmod +x and exits
-        non-zero until the body is filled in.
+        computational | domain | custom — informational category.
         """
-        return Scaffold(HARNESS_ROOT).new_sensor(name, kind=kind, force=force)
+        return Scaffold(HARNESS_ROOT).new_sensor(
+            name, kind=kind, mode=mode, force=force
+        )
 
     @mcp.tool
     async def harness_new_script(
@@ -174,6 +182,19 @@ def build_server() -> FastMCP:
         which stamps the matching script automatically.
         """
         return Scaffold(HARNESS_ROOT).new_script(name, body=body, force=force)
+
+    @mcp.tool
+    async def harness_new_prompt(
+        name: str, body: str | None = None, force: bool = False
+    ) -> dict:
+        """Scaffold a prompt markdown under `.keystone/harness/prompts/<name>.md`.
+
+        Used by inferential sensors — the agent reads the prompt and
+        performs the reasoning task it describes. Most projects scaffold
+        inferential sensors via `harness_new_sensor(mode="inferential")`
+        which stamps the matching prompt automatically.
+        """
+        return Scaffold(HARNESS_ROOT).new_prompt(name, body=body, force=force)
 
     @mcp.tool
     async def harness_new_skill(

@@ -129,8 +129,9 @@ release playbook (plus commented-out examples of every external adapter).
 | `list_topics(tag?)` | directory of configured topics |
 | `harness_bootstrap()` | scaffold the harness skeleton at `.keystone/harness/` |
 | `harness_new_guide(name, tier?)` | scaffold a new guide |
-| `harness_new_sensor(name, kind?)` | scaffold a sensor + matching shell script |
+| `harness_new_sensor(name, kind?, mode?)` | scaffold a sensor + matching script (computational) or prompt (inferential) |
 | `harness_new_script(name, body?)` | scaffold a sensor script (or ad-hoc shell script) |
+| `harness_new_prompt(name, body?)` | scaffold a sensor prompt (or ad-hoc prompt for inferential checks) |
 | `harness_new_skill(name, description?)` | scaffold `skills/<name>/SKILL.md` (FastMCP-native) |
 | `harness_new_adapter(agent)` | scaffold a per-agent adapter dir |
 | `harness_target_add(agent, project_root?)` | install agent menu file at project root |
