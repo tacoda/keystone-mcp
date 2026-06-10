@@ -161,18 +161,21 @@ def render_adapter_readme(agent: str) -> str:
 _MENU_TEMPLATE = (
     "# Harness pointer\n\n"
     "Project context lives in `{harness_root}/` and is also served at runtime\n"
-    "by the `keystone-mcp` server. Two ways to read it:\n\n"
+    "by the `keystone-mcp` server. The entire `.keystone/` directory is\n"
+    "version-controlled and shared with the team. **Never put secrets\n"
+    "there** — reference env vars via `env:VAR` in `.keystone/context.yaml`.\n\n"
     "**At session start** — load these files directly:\n"
     "- `{harness_root}/guides/**.md` — rules (IRON LAW / RULES / GOLDEN RULES).\n"
     "- `{harness_root}/corpus/**.md` — long-form reasoning, on demand.\n\n"
     "**At session time** — call the MCP server:\n"
-    "- `get_rules(topic)` for must-follow constraints.\n"
-    "- `get_reasoning(topic)` for background.\n"
-    "- `get_skills(topic)` for procedural how-to (actions, playbooks).\n"
-    "- `get_commands(topic)` for canned invocations.\n"
-    "- `list_topics()` to discover what is configured.\n\n"
-    "Configure topics in `.keystone/context.yaml`. See the keystone-mcp README\n"
-    "for adapter options.\n"
+    "- `list_topics()` (tool) — discover configured topics.\n"
+    "- `get_context(topic)` (tool) — full envelope (rules + reasoning + skills + commands).\n"
+    "- `context://{{topic}}` (resource) — same envelope, via resource read.\n"
+    "- `source://{{name}}/health` (resource) — adapter reachability.\n"
+    "- `harness://status` / `harness://options` (resources) — harness layout audit.\n\n"
+    "Scaffold new harness files with the `harness_new_*` write tools. The\n"
+    "default root is `.keystone/harness`. See the keystone-mcp README for\n"
+    "adapter and topic configuration.\n"
 )
 
 
@@ -215,12 +218,44 @@ class WriteResult:
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_\-]*$")
 
+# The .keystone/ directory is version-controlled and shared across the team.
+# Scaffold tools refuse to write any file whose name looks like a secret.
+# Real secrets belong in env vars, referenced from context.yaml via `env:NAME`.
+_SECRET_NAME_PATTERNS = (
+    "secret",
+    "secrets",
+    "token",
+    "credential",
+    "credentials",
+    "password",
+    "passwd",
+    "apikey",
+    "api-key",
+    "api_key",
+    "private",
+    ".env",
+    "envfile",
+)
+
+
+def _check_no_secret_name(name: str, kind: str) -> None:
+    lower = name.lower()
+    for pat in _SECRET_NAME_PATTERNS:
+        if pat in lower:
+            raise ScaffoldError(
+                f"{kind} name {name!r} looks like a secret. The .keystone/ "
+                f"directory is version-controlled and shared with the team — "
+                f"never put secrets there. Use `env:VAR` references in "
+                f"context.yaml to pull secrets from the environment instead."
+            )
+
 
 def _validate_name(name: str, kind: str) -> None:
     if not _NAME_RE.match(name or ""):
         raise ScaffoldError(
             f"{kind} name must match [a-zA-Z0-9][a-zA-Z0-9_-]*, got {name!r}"
         )
+    _check_no_secret_name(name, kind)
 
 
 def _write(path: Path, body: str, *, force: bool) -> tuple[bool, str]:

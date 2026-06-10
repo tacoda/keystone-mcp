@@ -116,14 +116,16 @@ def _build_slack(source: SourceConfig) -> SlackAdapter:
     )
 
 
+_HARNESS_ROOT = ".keystone/harness"
+
+
 def _build_harness(source: SourceConfig) -> HarnessAdapter:
-    s = source.settings
-    root = s.get("root")
-    if not root:
-        raise ConfigError(
-            f"source {source.name!r}: harness adapter requires 'root'"
-        )
-    return HarnessAdapter(root=root)
+    """The harness adapter is always rooted at `.keystone/harness`.
+
+    Any `root` declared in the config is ignored — keep this path fixed so
+    the team-shared `.keystone/` directory has one canonical layout.
+    """
+    return HarnessAdapter(root=_HARNESS_ROOT)
 
 
 _BUILDERS = {

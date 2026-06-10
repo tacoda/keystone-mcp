@@ -666,6 +666,39 @@ require changing the scaffold layout or adding a separate
 `<harness>/skills/` dir alongside actions/playbooks. Decide direction
 before Phase 13.
 
+## Phase 13 — fixed `.keystone/harness` root + secret guard (shipped)
+
+**Goal:** consolidate everything under `.keystone/`, version-controlled
+and team-shared. Drop the top-level `harness/` convention; harness lives at
+`.keystone/harness/` with a *fixed*, non-overridable path. Add a defensive
+guard against scaffolding files with secret-looking names.
+
+Shipped:
+- `HARNESS_ROOT = ".keystone/harness"` constant in `server.py`. Every
+  harness MCP tool hardcodes this path — `root` arg removed from
+  `harness_bootstrap`, `harness_new_*`, `harness_target_add`,
+  `harness_status`.
+- `_build_harness` in `resolver.py` ignores any `root` declared in the
+  config and always builds an adapter against `.keystone/harness`.
+  Keeps the team-shared layout canonical.
+- `harness://{root}/status` resource template removed; only `harness://status`
+  remains (single fixed root → single static resource).
+- Secret-name guard in `harness_scaffold.py`: `_check_no_secret_name`
+  rejects scaffold attempts whose name contains any of `secret`,
+  `secrets`, `token`, `credential`, `credentials`, `password`,
+  `passwd`, `apikey`, `api-key`, `api_key`, `private`, `.env`,
+  `envfile`. Error message points users at `env:VAR` indirection.
+- Agent menu template rewritten to reflect the Phase 12 MCP surface
+  (`get_context`, `context://{topic}` resources, no more `get_rules/...`
+  references) and to call out the no-secrets rule explicitly.
+- `.keystone/context.yaml` example: documented (commented) `hb: type:
+  harness` source and a `harness` topic that fans out across
+  guides/corpus/actions/playbooks/sensors.
+- 18 new tests covering the secret-name guard + updated menu template.
+  Total: 235.
+
+Surface count: 9 tools, 3 static resources, 2 resource templates.
+
 ## Phase 12+ — remaining open work
 
 - **Packaging.** Publish to PyPI and wire `uvx keystone-mcp` as the

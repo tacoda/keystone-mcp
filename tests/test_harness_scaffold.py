@@ -81,9 +81,16 @@ def test_render_adapter_readme_mentions_agent():
 
 
 def test_render_agent_menu_substitutes_harness_root():
-    out = render_agent_menu("harness")
-    assert "`harness/" in out
-    assert "get_rules(topic)" in out
+    out = render_agent_menu(".keystone/harness")
+    assert "`.keystone/harness/" in out
+    assert "get_context(topic)" in out
+    assert "context://" in out
+
+
+def test_render_agent_menu_warns_about_secrets():
+    out = render_agent_menu(".keystone/harness")
+    assert "Never put secrets" in out
+    assert "env:VAR" in out
 
 
 # Scaffold (write side) ----------------------------------------------------
@@ -206,8 +213,9 @@ def test_target_add_writes_menu_file_at_project_root(tmp_path):
     path = Path(result["created"][0])
     assert path == project / "CLAUDE.md"
     body = path.read_text()
-    assert "get_rules(topic)" in body
+    assert "get_context(topic)" in body
     assert "harness/" in body
+    assert "Never put secrets" in body
 
 
 def test_target_add_cursor_writes_nested_path(tmp_path):
@@ -266,3 +274,61 @@ def test_options_catalog_lists_choices():
     assert "build" in cat["sensor_kinds"]
     assert "claude-code" in cat["supported_agents"]
     assert "CLAUDE.md" in cat["agent_menu_files"]["claude-code"]
+
+
+# Secret-name guard -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "secret",
+        "my-secret",
+        "auth-token",
+        "api_key",
+        "api-key",
+        "apikey",
+        "credentials",
+        "github-credential",
+        "password",
+        "db-passwd",
+        "private",
+        "envfile",
+    ],
+)
+def test_scaffold_rejects_secret_like_names(tmp_path, name):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    with pytest.raises(ScaffoldError, match="looks like a secret"):
+        s.new_guide(name)
+
+
+@pytest.mark.parametrize("name", [".env", "production.env"])
+def test_scaffold_rejects_dotenv_names_via_regex(tmp_path, name):
+    # Names with dots fail the alphanumeric regex BEFORE the secret check.
+    # Either rejection is safe — both prevent the file from being written.
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    with pytest.raises(ScaffoldError):
+        s.new_guide(name)
+
+
+def test_scaffold_rejects_secret_like_sensor_name(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    with pytest.raises(ScaffoldError, match="looks like a secret"):
+        s.new_sensor("token-leak-scanner", kind="custom")
+
+
+def test_scaffold_rejects_secret_like_adapter_agent(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    with pytest.raises(ScaffoldError, match="looks like a secret"):
+        s.new_adapter("secret-agent")
+
+
+def test_scaffold_message_mentions_env_indirection(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    with pytest.raises(ScaffoldError, match="env:VAR"):
+        s.new_guide("api_token")

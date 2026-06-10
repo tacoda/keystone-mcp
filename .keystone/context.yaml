@@ -3,6 +3,11 @@ sources:
     type: markdown
     root: .keystone/context/
 
+  # The harness adapter is always rooted at .keystone/harness. Any `root`
+  # declared here is ignored. Uncomment once you've run harness_bootstrap.
+  # hb:
+  #   type: harness
+
   # Uncomment when GITHUB_TOKEN is set in the environment.
   # gh:
   #   type: github
@@ -147,6 +152,21 @@ topics:
   #           state: { type: { neq: "completed" } }
   #         limit: 25
   #   cache: 2m
+
+  # Project harness, served from .keystone/harness. Enable once you've
+  # populated the harness with `harness_bootstrap` and the `harness_new_*`
+  # tools, and uncommented the `hb` source above.
+  # harness:
+  #   description: |
+  #     Full project harness — guides (rules), corpus (reasoning),
+  #     actions / playbooks / sensors (skills).
+  #   sources:
+  #     - { source: hb, query: { type: guides } }
+  #     - { source: hb, query: { type: corpus } }
+  #     - { source: hb, query: { type: actions } }
+  #     - { source: hb, query: { type: playbooks } }
+  #     - { source: hb, query: { type: sensors } }
+  #   cache: 1m
 
   # deploy-channel-rules:
   #   description: |

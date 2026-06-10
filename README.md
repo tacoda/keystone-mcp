@@ -127,13 +127,19 @@ release playbook (plus commented-out examples of every external adapter).
 |---|---|
 | `get_context(topic)` | full envelope (rules + reasoning + skills + commands) |
 | `list_topics(tag?)` | directory of configured topics |
-| `harness_bootstrap(root?)` | scaffold the harness skeleton |
+| `harness_bootstrap()` | scaffold the harness skeleton at `.keystone/harness/` |
 | `harness_new_guide(name, tier?)` | scaffold a new guide |
 | `harness_new_sensor(name, kind?)` | scaffold a new sensor |
 | `harness_new_action(name)` | scaffold a new action |
 | `harness_new_playbook(name, actions?)` | scaffold a new playbook |
 | `harness_new_adapter(agent)` | scaffold a per-agent adapter dir |
 | `harness_target_add(agent, project_root?)` | install agent menu file at project root |
+
+All harness paths are fixed under `.keystone/harness/` — the `.keystone/`
+directory is team-shared and version-controlled. **Never put secrets there.**
+Reference them via `env:VAR` in `.keystone/context.yaml` instead. Scaffold
+tools refuse to write files whose names look like secrets (`secret`, `token`,
+`credential`, `password`, `api_key`, `private`, `envfile`, …).
 
 ### Resources
 
