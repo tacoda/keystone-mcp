@@ -36,6 +36,8 @@ BOOTSTRAP_DIRS = (
     "sensors",
     "scripts",
     "prompts",
+    "actions",
+    "playbooks",
     "adapters",
     "learning/inbox",
     "archive",
@@ -397,6 +399,63 @@ def menu_files_for(agent: str) -> tuple[str, ...]:
     return _AGENT_MENU_FILES[agent]
 
 
+def render_action(name: str) -> str:
+    """Render an `actions/<name>.md` body."""
+    return (
+        f"# Action: {_titleize(name)}\n\n"
+        f"**<One-line summary of what the {name} action does.>**\n\n"
+        "## When to use\n\n"
+        f"<The point in the task lifecycle at which the agent invokes "
+        f"`{name}`.>\n\n"
+        "## Inputs\n\n"
+        "- <Files, ledgers, or prior phase outputs the action reads.>\n\n"
+        "## Activities\n\n"
+        "1. <Step one.>\n"
+        "2. <Step two.>\n\n"
+        "## Output\n\n"
+        "<What the action produces (a diff, a verdict, a state update, "
+        "a report).>\n\n"
+        "## Iron laws\n\n"
+        "- <Any constraint this action must never violate.>\n"
+    )
+
+
+def render_playbook(name: str) -> str:
+    """Render a `playbooks/<name>.md` body."""
+    return (
+        f"# Playbook: {_titleize(name)}\n\n"
+        f"**<One-line summary of what the {name} playbook orchestrates.>**\n\n"
+        "## Goal\n\n"
+        "<What this playbook achieves end-to-end.>\n\n"
+        "## Phases\n\n"
+        "1. **<phase-1>.** <What happens. Which action(s) it invokes. The "
+        "gate that must clear before phase 2 starts.>\n"
+        "2. **<phase-2>.** <…>\n"
+        "3. **<phase-3>.** <…>\n\n"
+        "## Iron laws\n\n"
+        "- <Any constraint this playbook must never violate (e.g. no "
+        "commits with failing sensors).>\n\n"
+        "## Output\n\n"
+        "<What artifact or state change this playbook leaves behind.>\n"
+    )
+
+
+def render_corpus(name: str) -> str:
+    """Render a `corpus/<name>.md` body."""
+    return (
+        f"# {_titleize(name)}\n\n"
+        f"**<One-line summary of the {name} concept.>**\n\n"
+        "## Background\n\n"
+        "<Why this matters. What problem it addresses or what design "
+        "decision it records.>\n\n"
+        "## Detail\n\n"
+        "<Substantive reasoning, references to code, prior art, "
+        "trade-offs considered.>\n\n"
+        "## Related\n\n"
+        "- <Cross-links to other corpus / guides / actions / playbooks.>\n"
+    )
+
+
 def render_agent_menu(
     harness_root: str,
     *,
@@ -484,8 +543,23 @@ class Scaffold:
 
     # Bootstrap ------------------------------------------------------------
 
-    def bootstrap(self) -> dict[str, list[str]]:
-        """Create the skeleton directory layout under the harness root."""
+    def bootstrap(
+        self, *, materialize_templates: bool = False
+    ) -> dict[str, list[str]]:
+        """Create the skeleton directory layout under the harness root.
+
+        Phase 18: in addition to mkdir-ing the canonical subdirs, this
+        method materializes the shipped template tree from
+        `keystone_mcp.templates.harness/` so a fresh harness starts with
+        the default state-ledger templates, default sensors (lint, type,
+        test, build, drift, coverage, plus inferential reviews), default
+        actions / playbooks, and the harness README. Existing files are
+        never overwritten — the materialize pass writes only files that
+        don't yet exist.
+
+        `materialize_templates=False` restores the pre-Phase-18 behavior:
+        directories only, no shipped files.
+        """
         result = WriteResult([], [])
         for sub in BOOTSTRAP_DIRS:
             d = self._root / sub
@@ -494,6 +568,19 @@ class Scaffold:
             else:
                 d.mkdir(parents=True, exist_ok=True)
                 result.created.append(str(d))
+        if materialize_templates:
+            from . import templates
+
+            for rel, body in templates.iter_harness_files():
+                path = self._root / rel
+                if path.exists():
+                    result.skipped.append(str(path))
+                    continue
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(body, encoding="utf-8")
+                if path.suffix == ".sh":
+                    path.chmod(0o755)
+                result.created.append(str(path))
         return result.to_dict()
 
     # Guides / sensors / actions / playbooks ------------------------------
@@ -647,6 +734,60 @@ class Scaffold:
         return WriteResult(
             created=[p] if created else [], skipped=[] if created else [p]
         ).to_dict()
+
+    def new_action(
+        self, name: str, *, force: bool = False
+    ) -> dict[str, list[str]]:
+        """Scaffold `<root>/actions/<name>.md`.
+
+        Actions are short, focused operations the agent walks during a
+        task (spec, orient, implement, verify, review, learn, audit,
+        release). They complement `playbooks/` (which orchestrate
+        actions into a higher-level flow) and `skills/` (which expose
+        procedural how-to via the FastMCP `skill://` scheme).
+        """
+        _validate_name(name, "action")
+        path = self._root / "actions" / f"{name}.md"
+        created, p = _write(path, render_action(name), force=force)
+        return WriteResult(
+            created=[p] if created else [], skipped=[] if created else [p]
+        ).to_dict()
+
+    def new_playbook(
+        self, name: str, *, force: bool = False
+    ) -> dict[str, list[str]]:
+        """Scaffold `<root>/playbooks/<name>.md`.
+
+        Playbooks orchestrate ordered phases into an end-to-end flow:
+        `task`, `bootstrap`, `audit`, `install`, `verify`, `doctor`,
+        `patch`, `release`. Each phase has an explicit gate before the
+        next runs.
+        """
+        _validate_name(name, "playbook")
+        path = self._root / "playbooks" / f"{name}.md"
+        created, p = _write(path, render_playbook(name), force=force)
+        return WriteResult(
+            created=[p] if created else [], skipped=[] if created else [p]
+        ).to_dict()
+
+    def new_corpus(
+        self, name: str, *, force: bool = False
+    ) -> dict[str, list[str]]:
+        """Scaffold `<root>/corpus/<name>.md`.
+
+        Corpus entries are reasoning / background context — domain
+        notes, architecture decisions, idioms. Not constraints (those
+        live in `guides/`) and not procedures (those live in
+        `actions/`, `playbooks/`, `skills/`).
+        """
+        _validate_name(name, "corpus")
+        path = self._root / "corpus" / f"{name}.md"
+        created, p = _write(path, render_corpus(name), force=force)
+        return WriteResult(
+            created=[p] if created else [], skipped=[] if created else [p]
+        ).to_dict()
+
+    # Agent menus --------------------------------------------------------
 
     def target_add(
         self,

@@ -132,6 +132,9 @@ release playbook (plus commented-out examples of every external adapter).
 | `keystone_new_script(name, body?)` | scaffold a sensor script (or ad-hoc shell script) |
 | `keystone_new_prompt(name, body?)` | scaffold a sensor prompt (or ad-hoc prompt for inferential checks) |
 | `keystone_new_skill(name, description?)` | scaffold `skills/<name>/SKILL.md` (FastMCP-native; manager-authored skills are auto-prefixed `keystone-`) |
+| `keystone_new_action(name)` | scaffold `actions/<name>.md` |
+| `keystone_new_playbook(name)` | scaffold `playbooks/<name>.md` |
+| `keystone_new_corpus(name)` | scaffold `corpus/<name>.md` |
 | `keystone_new_adapter(agent)` | scaffold a per-agent adapter dir |
 | `keystone_target_add(agent, project_root?)` | install agent menu file at project root |
 

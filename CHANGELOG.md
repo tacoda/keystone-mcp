@@ -6,6 +6,36 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 18 — shipped template library + `actions` / `playbooks` ports restored
+
+**Additive (mostly).** Templates move out of inline Python strings into a
+shipped data tree.
+
+- New `src/keystone_mcp/templates/` package shipped with the wheel.
+  Mirrors the on-disk layout the consumer project gets at
+  `.keystone/harness/`. Loaded via `importlib.resources`.
+- Ships the default state-ledger templates (`CODEBASE_STATE`,
+  `risk-fingerprints`, `quality-radar`, `traffic-topology`,
+  `code-debt`), default computational sensors (lint / type / test /
+  build / drift / coverage) with executable scripts, default
+  inferential sensors (security-review / code-review /
+  accessibility-review / performance-review) with prompt bodies,
+  default actions (spec / orient / implement / verify / review /
+  learn / audit / release), and default playbooks (task / bootstrap /
+  audit / verify / release).
+- `actions/` and `playbooks/` restored as first-class ports in
+  `BOOTSTRAP_DIRS`. New `Scaffold.new_action`, `Scaffold.new_playbook`,
+  `Scaffold.new_corpus` methods + matching `render_action`,
+  `render_playbook`, `render_corpus`.
+- New MCP tools: `keystone_new_action`, `keystone_new_playbook`,
+  `keystone_new_corpus`.
+- `Scaffold.bootstrap(materialize_templates=True)` materializes the
+  shipped tree into the consumer harness. Existing files are never
+  overwritten — the materialize pass writes only files that don't yet
+  exist. The MCP tool `keystone_harness_bootstrap()` defaults to
+  `True`; the Python-level `Scaffold.bootstrap()` defaults to `False`
+  to keep test fixtures predictable.
+
 ### Phase 17 — tier vocabulary alignment
 
 **Breaking.** Guide tiers renamed:

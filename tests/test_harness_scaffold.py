@@ -386,6 +386,96 @@ def test_new_skill_invalid_name_rejected(tmp_path):
         s.new_skill("../bad")
 
 
+# Phase 18 — new ports: actions / playbooks / corpus ---------------------
+
+
+def test_new_action_writes_file(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    result = s.new_action("orient")
+    path = Path(result["created"][0])
+    assert path == s.root / "actions" / "orient.md"
+    body = path.read_text()
+    assert "# Action: Orient" in body
+    assert "## When to use" in body
+    assert "## Iron laws" in body
+
+
+def test_new_action_refuses_overwrite_without_force(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    s.new_action("orient")
+    second = s.new_action("orient")
+    assert second["created"] == []
+    assert len(second["skipped"]) == 1
+
+
+def test_new_action_invalid_name_rejected(tmp_path):
+    s = _scaffold(tmp_path)
+    with pytest.raises(ScaffoldError, match="action name"):
+        s.new_action("../bad")
+
+
+def test_new_playbook_writes_file(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    result = s.new_playbook("verify")
+    path = Path(result["created"][0])
+    assert path == s.root / "playbooks" / "verify.md"
+    body = path.read_text()
+    assert "# Playbook: Verify" in body
+    assert "## Phases" in body
+    assert "## Iron laws" in body
+
+
+def test_new_playbook_refuses_overwrite_without_force(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    s.new_playbook("verify")
+    second = s.new_playbook("verify")
+    assert second["created"] == []
+    assert len(second["skipped"]) == 1
+
+
+def test_new_playbook_invalid_name_rejected(tmp_path):
+    s = _scaffold(tmp_path)
+    with pytest.raises(ScaffoldError, match="playbook name"):
+        s.new_playbook("../bad")
+
+
+def test_new_corpus_writes_file(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    result = s.new_corpus("architecture")
+    path = Path(result["created"][0])
+    assert path == s.root / "corpus" / "architecture.md"
+    body = path.read_text()
+    assert "# Architecture" in body
+    assert "## Background" in body
+
+
+def test_new_corpus_refuses_overwrite_without_force(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    s.new_corpus("architecture")
+    second = s.new_corpus("architecture")
+    assert second["created"] == []
+    assert len(second["skipped"]) == 1
+
+
+def test_new_corpus_invalid_name_rejected(tmp_path):
+    s = _scaffold(tmp_path)
+    with pytest.raises(ScaffoldError, match="corpus name"):
+        s.new_corpus("../bad")
+
+
+def test_bootstrap_adds_actions_and_playbooks_dirs(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    assert (s.root / "actions").is_dir()
+    assert (s.root / "playbooks").is_dir()
+
+
 def test_new_adapter_creates_dir_and_readme(tmp_path):
     s = _scaffold(tmp_path)
     s.bootstrap()
@@ -577,6 +667,113 @@ def test_status_when_root_missing(tmp_path):
     status = s.status()
     assert status["root_exists"] is False
     assert status["subdirs"] == {}
+
+
+# Phase 18 — shipped template materialization ----------------------------
+
+
+def test_bootstrap_default_does_not_materialize_templates(tmp_path):
+    # The Python-level default is `materialize_templates=False` so existing
+    # tests that rely on a bare harness keep working. The MCP tool wrapper
+    # opts in to `True`.
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    assert not (s.root / "sensors" / "lint.md").exists()
+    assert not (s.root / "actions" / "spec.md").exists()
+    assert not (s.root / "playbooks" / "task.md").exists()
+
+
+def test_bootstrap_materialize_ships_state_ledgers(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap(materialize_templates=True)
+    state = s.root / "corpus" / "state"
+    for ledger in (
+        "CODEBASE_STATE.md",
+        "risk-fingerprints.md",
+        "quality-radar.md",
+        "traffic-topology.md",
+        "code-debt.md",
+    ):
+        assert (state / ledger).is_file(), ledger
+
+
+def test_bootstrap_materialize_ships_default_sensors(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap(materialize_templates=True)
+    sensors = s.root / "sensors"
+    for kind in (
+        "lint",
+        "type",
+        "test",
+        "build",
+        "drift",
+        "coverage",
+    ):
+        assert (sensors / f"{kind}.md").is_file(), kind
+    # Inferential review prompts shipped.
+    prompts = s.root / "prompts"
+    for review in (
+        "security-review",
+        "code-review",
+        "accessibility-review",
+        "performance-review",
+    ):
+        assert (prompts / f"{review}.md").is_file(), review
+
+
+def test_bootstrap_materialize_ships_default_scripts_executable(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap(materialize_templates=True)
+    scripts = s.root / "scripts"
+    for kind in ("lint", "type", "test", "build", "drift", "coverage"):
+        path = scripts / f"{kind}.sh"
+        assert path.is_file(), kind
+        assert path.stat().st_mode & 0o111, f"{kind}.sh not executable"
+
+
+def test_bootstrap_materialize_ships_actions_and_playbooks(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap(materialize_templates=True)
+    for action in (
+        "spec",
+        "orient",
+        "implement",
+        "verify",
+        "review",
+        "learn",
+        "audit",
+        "release",
+    ):
+        assert (s.root / "actions" / f"{action}.md").is_file(), action
+    for playbook in (
+        "task",
+        "bootstrap",
+        "audit",
+        "verify",
+        "release",
+    ):
+        assert (s.root / "playbooks" / f"{playbook}.md").is_file(), playbook
+
+
+def test_bootstrap_materialize_is_idempotent(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap(materialize_templates=True)
+    second = s.bootstrap(materialize_templates=True)
+    # All shipped paths exist after the first pass, so the second pass
+    # reports them in `skipped` and creates nothing new.
+    assert second["created"] == []
+    assert second["skipped"]  # non-empty
+
+
+def test_bootstrap_materialize_does_not_overwrite_user_files(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap(materialize_templates=False)
+    # Pre-write a custom version of a shipped file.
+    custom = "# my own bootstrap\n\nedited by hand.\n"
+    (s.root / "playbooks").mkdir(parents=True, exist_ok=True)
+    (s.root / "playbooks" / "task.md").write_text(custom)
+    s.bootstrap(materialize_templates=True)
+    assert (s.root / "playbooks" / "task.md").read_text() == custom
 
 
 def test_options_catalog_lists_choices():

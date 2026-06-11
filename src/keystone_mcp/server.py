@@ -129,14 +129,24 @@ def build_server() -> FastMCP:
     # `.keystone/` directory is team-shared and version-controlled.
 
     @mcp.tool
-    async def keystone_harness_bootstrap() -> dict:
-        """Create the skeleton directory layout under `.keystone/harness`.
+    async def keystone_harness_bootstrap(
+        materialize_templates: bool = True,
+    ) -> dict:
+        """Create `.keystone/harness/` and (by default) materialize the
+        shipped template tree.
 
-        Idempotent — existing subdirs are reported in `skipped`. Call this
-        once per project before scaffolding individual guides / sensors /
-        actions / playbooks.
+        Idempotent — existing subdirs and files are reported in `skipped`,
+        never overwritten. Call this once per project before scaffolding
+        individual guides / sensors / actions / playbooks.
+
+        Pass `materialize_templates=False` to get the bare-bones directory
+        layout only (no shipped state ledgers, sensors, actions, or
+        playbooks). The full tree is the recommended default; opt out
+        only for advanced use cases.
         """
-        return Scaffold(HARNESS_ROOT).bootstrap()
+        return Scaffold(HARNESS_ROOT).bootstrap(
+            materialize_templates=materialize_templates
+        )
 
     @mcp.tool
     async def keystone_new_guide(
@@ -221,6 +231,39 @@ def build_server() -> FastMCP:
         return Scaffold(HARNESS_ROOT).new_skill(
             name, description=description, force=force
         )
+
+    @mcp.tool
+    async def keystone_new_action(name: str, force: bool = False) -> dict:
+        """Scaffold a new action markdown under `.keystone/harness/actions/<name>.md`.
+
+        Actions are short, focused operations the agent walks during a
+        task — `spec`, `orient`, `implement`, `verify`, `review`,
+        `learn`, `audit`, `release`. They complement playbooks (which
+        orchestrate actions into a flow) and skills (which expose
+        procedural how-to via the FastMCP `skill://` scheme).
+        """
+        return Scaffold(HARNESS_ROOT).new_action(name, force=force)
+
+    @mcp.tool
+    async def keystone_new_playbook(name: str, force: bool = False) -> dict:
+        """Scaffold a new playbook markdown under `.keystone/harness/playbooks/<name>.md`.
+
+        Playbooks orchestrate multiple actions into a higher-level flow
+        with explicit phase gates: `task`, `bootstrap`, `audit`,
+        `install`, `verify`, `doctor`, `patch`, `release`.
+        """
+        return Scaffold(HARNESS_ROOT).new_playbook(name, force=force)
+
+    @mcp.tool
+    async def keystone_new_corpus(name: str, force: bool = False) -> dict:
+        """Scaffold a new corpus markdown under `.keystone/harness/corpus/<name>.md`.
+
+        Corpus entries are reasoning / background context — domain
+        notes, architecture decisions, idioms. Not constraints (those
+        go in `guides/`) and not procedures (those go in `actions/`,
+        `playbooks/`, `skills/`).
+        """
+        return Scaffold(HARNESS_ROOT).new_corpus(name, force=force)
 
     @mcp.tool
     async def keystone_new_adapter(agent: str, force: bool = False) -> dict:
