@@ -1,0 +1,1834 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keystone-mcp — the end-to-end harness manager (MCP server)</title>
+<meta name="description" content="keystone-mcp is a single MCP server that owns the full lifecycle of a project harness: scaffold, source brokering, sensors, cascade verify, and forward-only template patches. MIT, on PyPI.">
+<meta property="og:title" content="keystone-mcp — the end-to-end harness manager">
+<meta property="og:description" content="One MCP server that scaffolds a markdown-only project harness and brokers rules, reasoning, skills, and commands from markdown, GitHub, Confluence, Notion, Jira, Linear, Slack.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0d0f14">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+  :root {
+    --bg: #0d0f14;
+    --surface: #13161d;
+    --surface2: #1a1e28;
+    --surface3: #21263214;
+    --border: #252a38;
+    --border-bright: #2f3548;
+    --accent: #4ade9a;
+    --accent2: #60a5fa;
+    --accent3: #f59e0b;
+    --accent4: #e879a0;
+    --accent5: #a78bfa;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --muted: #64748b;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+    --sidebar-w: 280px;
+    --ease: cubic-bezier(.22,.61,.36,1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-weight: 300;
+    line-height: 1.6;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent2); text-decoration: none; border-bottom: 1px dotted var(--accent2); transition: color .15s var(--ease), border-color .15s var(--ease); }
+  a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  code { font-family: var(--mono); font-size: 0.85em; color: var(--accent); background: var(--surface2); padding: 1px 6px; border-radius: 2px; }
+
+  /* ------------- App shell ------------- */
+  .app { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: var(--sidebar-w);
+    flex: 0 0 var(--sidebar-w);
+    background: linear-gradient(180deg, #0b0d12 0%, #0d0f14 100%);
+    border-right: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 28px 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .brand {
+    border-left: 3px solid var(--accent);
+    padding: 4px 0 4px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .brand-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand-logo-wrap {
+    position: relative;
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    overflow: hidden;
+    /* After the drop settles, idle-float subtly. The drop has fill `both`
+       so it settles at translateY(0); the float picks up from there. */
+    animation: keystone-logo-float 4s ease-in-out 0.65s infinite;
+  }
+  .brand-logo {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    display: block;
+    animation: keystone-logo-drop 0.65s var(--ease) both;
+  }
+  /* Light bar sweeps across the keystone every 2s — sleek-and-shiny vibe.
+     The keystone PNG is used as a mask so the shine only paints over the
+     opaque part of the logo, never on the transparent surround. */
+  .brand-logo-wrap::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(
+      65deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.0) 38%,
+      rgba(255, 255, 255, 0.7) 50%,
+      rgba(255, 255, 255, 0.0) 62%,
+      transparent 100%
+    );
+    background-size: 300% 100%;
+    background-repeat: no-repeat;
+    background-position: -20% 50%;
+    -webkit-mask-image: url(keystone_logo.png);
+            mask-image: url(keystone_logo.png);
+    -webkit-mask-size: 100% 100%;
+            mask-size: 100% 100%;
+    -webkit-mask-position: center;
+            mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+            mask-repeat: no-repeat;
+    pointer-events: none;
+    animation: keystone-logo-shine 2s ease-in-out 0.65s infinite;
+  }
+  /* …and a sparkle pops in the top-right corner exactly when the shine
+     hits it. Cued to the same 2s cycle, peak timed to overlap the shine's
+     leading edge at the top-right. Shaped as a 4-point star via clip-path
+     with thin, ✨-style rays. */
+  .brand-logo-wrap::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    /* Thin-rayed 4-point star — inner corners pulled close to center
+       so the rays are sleek, like the ✨ emoji. */
+    clip-path: polygon(
+      50% 0%,
+      54% 46%,
+      100% 50%,
+      54% 54%,
+      50% 100%,
+      46% 54%,
+      0% 50%,
+      46% 46%
+    );
+    /* Multi-layer drop-shadow gives a bright, shiny halo that hugs the
+       star's actual shape (drop-shadow respects clip-path, unlike
+       box-shadow). */
+    filter:
+      drop-shadow(0 0 4px rgba(255, 255, 255, 1))
+      drop-shadow(0 0 10px rgba(255, 255, 255, 0.7))
+      drop-shadow(0 0 18px rgba(255, 255, 255, 0.35));
+    transform: scale(0) rotate(-20deg);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 2;
+    animation: keystone-logo-sparkle 2s ease-out 0.65s infinite;
+  }
+  @keyframes keystone-logo-drop {
+    0%   { transform: translateY(-48px); opacity: 0; }
+    65%  { transform: translateY(5px);   opacity: 1; }
+    85%  { transform: translateY(-2px);  opacity: 1; }
+    100% { transform: translateY(0);     opacity: 1; }
+  }
+  @keyframes keystone-logo-float {
+    0%, 100% { transform: translateY(0);    }
+    50%      { transform: translateY(-3px); }
+  }
+  /* Background-position animation slides the gradient stripe across.
+     At 0% the bright band is just off the right edge; at 25% it has
+     traversed and exited to the left. Then idle for the remainder. */
+  @keyframes keystone-logo-shine {
+    0%   { background-position: -20% 50%; }
+    25%  { background-position: 120% 50%; }
+    100% { background-position: 120% 50%; }
+  }
+  /* Sparkle peaks at ~8% of the cycle — the moment the shine's leading
+     edge arrives at the top-right corner of the keystone. A small rotation
+     during the twinkle so the 4-point star feels alive, not pasted on. */
+  @keyframes keystone-logo-sparkle {
+    0%, 4%    { transform: scale(0)    rotate(-20deg); opacity: 0; }
+    8%        { transform: scale(1.5)  rotate(0deg);   opacity: 1; }
+    14%       { transform: scale(1.15) rotate(12deg);  opacity: 0.9; }
+    20%       { transform: scale(0.5)  rotate(24deg);  opacity: 0.35; }
+    28%, 100% { transform: scale(0)    rotate(30deg);  opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brand-logo { animation: none; }
+    .brand-logo-wrap { animation: none; }
+    .brand-logo-wrap::after,
+    .brand-logo-wrap::before { animation: none; opacity: 0; }
+  }
+  .brand h1 {
+    font-family: var(--mono);
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .brand p {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    margin-top: 0;
+    line-height: 1.5;
+  }
+
+  nav { display: flex; flex-direction: column; gap: 18px; }
+
+  .nav-group { display: flex; flex-direction: column; gap: 2px; }
+  .nav-label {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 12px 6px;
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    padding: 7px 12px 7px 14px;
+    border-left: 2px solid transparent;
+    border-bottom: none;
+    border-radius: 0 2px 2px 0;
+    letter-spacing: 0.02em;
+    transition: color .18s var(--ease), background .18s var(--ease), border-color .18s var(--ease), padding-left .18s var(--ease);
+  }
+  .nav-link:hover {
+    color: var(--text);
+    background: rgba(74,222,154,0.04);
+    border-left-color: var(--border-bright);
+    border-bottom: none;
+    padding-left: 16px;
+  }
+  .nav-link.active {
+    color: var(--accent);
+    background: rgba(74,222,154,0.08);
+    border-left-color: var(--accent);
+  }
+  .nav-link .badge {
+    font-family: var(--mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.12em;
+    color: var(--accent3);
+    background: rgba(245,158,11,0.10);
+    border: 1px solid rgba(245,158,11,0.25);
+    padding: 1px 6px;
+    border-radius: 2px;
+  }
+  .nav-link .ext { color: var(--muted); font-size: 0.7rem; }
+
+  .sidebar-foot {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sidebar-foot a {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    border-bottom: none;
+    padding: 3px 14px;
+    letter-spacing: 0.06em;
+    transition: color .15s var(--ease);
+  }
+  .sidebar-foot a:hover { color: var(--accent); }
+
+  /* ------------- Content ------------- */
+  .content {
+    flex: 1;
+    min-width: 0;
+    padding: 56px 48px 40px;
+    max-width: 980px;
+    width: 100%;
+  }
+
+  .page { display: none; animation: pageIn .28s var(--ease); }
+  .page.active { display: block; }
+
+  @keyframes pageIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .page { animation: none; }
+    * { transition: none !important; }
+  }
+
+  /* Section header */
+  .page-head {
+    margin-bottom: 36px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .page-head .crumb {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .page-head h1 {
+    font-family: var(--sans);
+    font-size: 1.7rem;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    margin-bottom: 10px;
+  }
+  .page-head p.tagline {
+    color: var(--text-dim);
+    font-size: 0.95rem;
+    line-height: 1.7;
+    max-width: 720px;
+  }
+
+  /* Hero-title color-cycle: italicized "any" in the introduction title cycles
+     through the five accent colors with a soft underline glow. Same posture
+     as the pipeline-pulse but on a single element instead of moving across
+     a row of phases. 5 colors × 1.2s per stop = 6s loop. */
+  .hero-any {
+    font-style: italic;
+    font-weight: 600;
+    color: var(--accent);
+    text-shadow: 0 0 0 transparent;
+    display: inline-block; /* needed so transform shakes the glyph */
+    animation: hero-any-cycle 6s ease-in-out infinite;
+  }
+  .hero-any:hover {
+    animation:
+      hero-any-cycle 6s ease-in-out infinite,
+      hero-any-shake 0.45s ease-in-out infinite;
+  }
+  .hero-any.rev { animation-direction: reverse; }
+  .hero-any.rev:hover {
+    animation:
+      hero-any-cycle 6s ease-in-out infinite reverse,
+      hero-any-shake 0.45s ease-in-out infinite;
+  }
+  @keyframes hero-any-cycle {
+    0%, 100% { color: var(--accent);  text-shadow: 0 0 18px rgba(74, 222, 154, 0.45); }
+    20%      { color: var(--accent2); text-shadow: 0 0 18px rgba(96, 165, 250, 0.45); }
+    40%      { color: var(--accent3); text-shadow: 0 0 18px rgba(245, 158, 11, 0.45); }
+    60%      { color: var(--accent4); text-shadow: 0 0 18px rgba(232, 121, 160, 0.45); }
+    80%      { color: var(--accent5); text-shadow: 0 0 18px rgba(167, 139, 250, 0.45); }
+  }
+  @keyframes hero-any-shake {
+    0%, 100% { transform: translate(0, 0)      rotate(0deg);     }
+    20%      { transform: translate(-1.5px, 1px)  rotate(-2.5deg); }
+    40%      { transform: translate( 1.5px, -1px) rotate( 2.5deg); }
+    60%      { transform: translate(-1px, -1px)   rotate(-1.5deg); }
+    80%      { transform: translate( 1px,  1px)   rotate( 1.5deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-any, .hero-any:hover { animation: none; }
+  }
+
+  /* Section labels */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 32px 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Definition block */
+  .definition {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent2);
+    padding: 22px 26px;
+    margin-bottom: 20px;
+    border-radius: 2px;
+    transition: border-color .25s var(--ease);
+  }
+  .definition:hover { border-left-color: var(--accent); }
+  .definition p {
+    font-size: 0.95rem;
+    line-height: 1.8;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .definition p:last-child { margin-bottom: 0; }
+  .definition strong { color: var(--accent2); font-weight: 600; }
+
+  /* Code blocks */
+  pre.code {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent3);
+    border-radius: 2px;
+    padding: 16px 20px;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--text);
+    line-height: 1.7;
+    overflow-x: auto;
+    margin-bottom: 16px;
+  }
+  pre.code .prompt { color: var(--muted); user-select: none; }
+  pre.code .comment { color: var(--muted); }
+  pre.code .kw { color: var(--accent5); }
+  pre.code code { background: transparent; padding: 0; color: inherit; font-size: inherit; }
+
+  /* Install method */
+  .install-method { margin-bottom: 28px; }
+  .install-method h3 {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .install-method h3::before { content: '▸'; color: var(--accent); }
+  .install-method p {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 10px;
+    line-height: 1.7;
+  }
+
+  /* Action grid */
+  .action-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .action-grid.three { grid-template-columns: 1fr 1fr 1fr; }
+  .action-grid.four { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .action {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 18px 20px;
+    border-radius: 2px;
+    transition: border-color .25s var(--ease), transform .25s var(--ease), background .25s var(--ease), box-shadow .25s var(--ease);
+  }
+  .action:hover {
+    border-color: var(--border-bright);
+    transform: translateY(-3px);
+    background: var(--surface2);
+    box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.55);
+  }
+
+  .action-tag {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+    display: inline-block;
+    margin-bottom: 10px;
+    background: var(--surface2);
+    color: var(--muted);
+  }
+  .action h3 {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .action h3 .when {
+    font-size: 0.65rem;
+    color: var(--muted);
+    font-weight: 400;
+    margin-left: 8px;
+    letter-spacing: 0.05em;
+  }
+  .action p {
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+  .action p code { font-size: 0.78em; }
+
+  /* Layer table */
+  .layer-header {
+    display: grid;
+    grid-template-columns: 130px 1fr 180px 180px;
+    gap: 0;
+    margin-bottom: 2px;
+  }
+  .layer-header span {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 8px 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+  }
+  .layers { display: grid; gap: 2px; margin-bottom: 20px; }
+  .layer {
+    display: grid;
+    grid-template-columns: 130px 1fr 180px 180px;
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    transition: border-color .2s var(--ease);
+  }
+  .layer:hover { border-color: var(--border-bright); }
+  .layer-cell {
+    padding: 14px 16px;
+    font-size: 0.83rem;
+    border-right: 1px solid var(--border);
+  }
+  .layer-cell:last-child { border-right: none; }
+  .layer-name { font-family: var(--mono); font-weight: 600; font-size: 0.8rem; }
+  .layer-desc { color: var(--muted); font-size: 0.8rem; line-height: 1.6; }
+  .layer-author { color: var(--muted); font-size: 0.78rem; }
+  .layer-act { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+
+  .l1 .layer-name { color: var(--accent); }
+  .l2 .layer-name { color: var(--accent2); }
+  .l3 .layer-name { color: var(--accent3); }
+  .l4 .layer-name { color: var(--accent4); }
+  .l5 .layer-name { color: var(--accent5); }
+
+  /* Phase pipeline */
+  .pipeline {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+  .phase {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 12px 10px;
+    text-align: center;
+    transition: transform .2s var(--ease), border-color .2s var(--ease);
+  }
+  .phase:hover { transform: translateY(-1px); border-color: var(--border-bright); }
+  .phase .phase-num {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    display: block;
+    margin-bottom: 4px;
+  }
+  .phase .phase-name {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .phase.p1 { border-top: 2px solid var(--accent);  --phase-color: 74, 222, 154; }
+  .phase.p2 { border-top: 2px solid var(--accent2); --phase-color: 96, 165, 250; }
+  .phase.p3 { border-top: 2px solid var(--accent3); --phase-color: 245, 158, 11; }
+  .phase.p4 { border-top: 2px solid var(--accent4); --phase-color: 232, 121, 160; }
+  .phase.p5 { border-top: 2px solid var(--accent5); --phase-color: 167, 139, 250; }
+  .phase.p6 { border-top: 2px solid var(--accent);  --phase-color: 74, 222, 154; }
+
+  /* Pulse the pipeline in order, with a slight overlap so movement reads
+     as a wave traveling left-to-right. Six phases × 0.6s each = 3.6s loop. */
+  @keyframes pipeline-pulse {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(var(--phase-color), 0);
+      background: var(--surface);
+    }
+    35% {
+      box-shadow: 0 0 24px 2px rgba(var(--phase-color), 0.55);
+      background: rgba(var(--phase-color), 0.10);
+    }
+    70% {
+      box-shadow: 0 0 0 0 rgba(var(--phase-color), 0);
+      background: var(--surface);
+    }
+  }
+  .pipeline .phase {
+    animation: pipeline-pulse 3.6s ease-in-out infinite;
+  }
+  .pipeline .phase.p1 { animation-delay: 0.0s; }
+  .pipeline .phase.p2 { animation-delay: 0.6s; }
+  .pipeline .phase.p3 { animation-delay: 1.2s; }
+  .pipeline .phase.p4 { animation-delay: 1.8s; }
+  .pipeline .phase.p5 { animation-delay: 2.4s; }
+  .pipeline .phase.p6 { animation-delay: 3.0s; }
+  @media (prefers-reduced-motion: reduce) {
+    .pipeline .phase { animation: none; }
+  }
+  .phase-desc {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.7;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent2);
+    padding: 16px 20px;
+    border-radius: 2px;
+  }
+
+  /* Flywheels */
+  .flywheels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .flywheel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 22px 24px;
+    transition: border-color .25s var(--ease), transform .25s var(--ease), box-shadow .25s var(--ease);
+  }
+  .flywheel:hover {
+    border-color: var(--border-bright);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.55);
+  }
+  .flywheel h3 {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .fw-learn-h { color: var(--accent); }
+  .fw-prune-h { color: var(--accent4); }
+  .loop { display: flex; flex-direction: column; gap: 0; }
+  .loop-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .loop-step:last-child { border-bottom: none; }
+  .loop-num {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    min-width: 24px;
+    padding-top: 2px;
+  }
+  .loop-text {
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.55;
+  }
+  .loop-text strong { color: var(--text); font-weight: 600; }
+
+  /* Agents table */
+  .agents-table { display: grid; gap: 2px; }
+  .agent-row {
+    display: grid;
+    grid-template-columns: 220px 130px 1fr;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    transition: border-color .2s var(--ease);
+  }
+  .agent-row:hover { border-color: var(--border-bright); }
+  .agent-row.head span {
+    background: var(--surface2);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .agent-row span {
+    padding: 10px 14px;
+    border-right: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+  .agent-row span:last-child { border-right: none; }
+  .agent-name { font-family: var(--mono); color: var(--text); font-weight: 600; }
+  .agent-status {
+    font-family: var(--mono);
+    font-size: 0.7rem !important;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .agent-status.real { color: var(--accent); }
+  .agent-status.gaps { color: var(--accent3); }
+  .agent-status.fallback { color: var(--muted); }
+  .agent-menu { font-family: var(--mono); color: var(--muted); font-size: 0.76rem !important; }
+
+  /* Tree */
+  .tree {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 24px 28px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.95;
+    overflow-x: auto;
+  }
+  .tree-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .tree-structure { color: var(--muted); user-select: none; }
+  .tree-dir { color: var(--text); font-weight: 600; }
+  .tree-file { color: var(--muted); }
+  .tree-annotation { font-size: 0.66rem; margin-left: 8px; }
+  .ann-1 { color: rgba(74,222,154,0.55); }
+  .ann-2 { color: rgba(96,165,250,0.55); }
+  .ann-3 { color: rgba(245,158,11,0.55); }
+  .ann-4 { color: rgba(232,121,160,0.55); }
+  .ann-5 { color: rgba(167,139,250,0.55); }
+  .ann-default { color: var(--muted); opacity: 0.7; }
+
+  /* Terminal hero */
+  .hero-term { margin-bottom: 36px; }
+  .term {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 0 24px 48px -28px rgba(0,0,0,.7);
+    transition: border-color .25s var(--ease), transform .35s var(--ease);
+  }
+  .term:hover { border-color: var(--border-bright); }
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 12px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+  .term-bar .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border-bright);
+  }
+  .term-bar .dot.d1 { background: #e879a0; }
+  .term-bar .dot.d2 { background: #f59e0b; }
+  .term-bar .dot.d3 { background: #4ade9a; }
+  .term-bar .tlabel {
+    margin-left: 8px;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+  .term-body {
+    padding: 22px 22px 26px;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    line-height: 1.95;
+    color: var(--text);
+    overflow-x: auto;
+  }
+  .term-body .pr  { color: var(--accent3); }
+  .term-body .ok  { color: var(--accent); }
+  .term-body .ar  { color: var(--accent2); }
+  .term-body .dim { color: var(--muted); }
+  .term-body .huh {
+    display: block;
+    white-space: pre;
+    line-height: 1.35;
+    margin: 8px 0 10px;
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+  .term-body .huh .hcur { color: var(--accent3); font-weight: 600; }
+  .term-body .huh .hsel { color: var(--text); }
+  .term-body .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: var(--accent);
+    vertical-align: middle;
+    margin-left: 2px;
+    animation: blink 1s steps(2,end) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* CTA cards */
+  .cta-card {
+    background:
+      linear-gradient(180deg, rgba(232,121,160,0.06), rgba(167,139,250,0.04)),
+      var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent4);
+    padding: 26px 30px;
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 20px;
+    transition: border-color .25s var(--ease), transform .25s var(--ease), box-shadow .25s var(--ease);
+  }
+  .cta-card:hover { transform: translateY(-3px); border-color: var(--border-bright); border-left-color: var(--accent4); box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.55); }
+  .cta-card.alt {
+    background:
+      linear-gradient(180deg, rgba(74,222,154,0.06), rgba(96,165,250,0.04)),
+      var(--surface);
+    border-left: 3px solid var(--accent);
+  }
+  .cta-card.alt:hover { border-left-color: var(--accent); }
+  .cta-card::before {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 160px; height: 160px;
+    background: radial-gradient(circle at top right, rgba(232,121,160,0.18), transparent 70%);
+    pointer-events: none;
+  }
+  .cta-card.alt::before {
+    background: radial-gradient(circle at top right, rgba(74,222,154,0.18), transparent 70%);
+  }
+  .cta-headline {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    margin-bottom: 12px;
+    letter-spacing: 0.02em;
+    position: relative;
+  }
+  .cta-card .cta-headline { color: var(--accent4); }
+  .cta-card.alt .cta-headline { color: var(--accent); }
+  .cta-body {
+    font-size: 0.9rem;
+    line-height: 1.75;
+    margin-bottom: 18px;
+    color: var(--text);
+    position: relative;
+    max-width: 720px;
+  }
+  .cta-list {
+    list-style: none;
+    margin: 0 0 20px 0;
+    padding: 0;
+    position: relative;
+  }
+  .cta-list li {
+    font-size: 0.85rem;
+    line-height: 1.65;
+    padding: 5px 0;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+  .cta-list .il-tag {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--accent5);
+    padding: 4px 10px;
+    border-radius: 2px;
+    min-width: 150px;
+    text-align: center;
+  }
+  .cta-card.alt .cta-list .il-tag { color: var(--accent); }
+  .cta-buttons {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    position: relative;
+  }
+  .cta-btn {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    padding: 11px 22px;
+    border-radius: 2px;
+    text-transform: uppercase;
+    border-bottom: none !important;
+    transition: background .18s var(--ease), color .18s var(--ease), transform .18s var(--ease);
+  }
+  .cta-btn:hover { transform: translateY(-1px); }
+  .cta-primary {
+    background: var(--accent4);
+    color: var(--bg);
+    border: 1px solid var(--accent4);
+  }
+  .cta-primary:hover {
+    background: transparent;
+    color: var(--accent4);
+  }
+  .cta-card.alt .cta-primary {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+  .cta-card.alt .cta-primary:hover {
+    background: transparent;
+    color: var(--accent);
+  }
+  .cta-secondary {
+    background: transparent;
+    color: var(--accent5);
+    border: 1px solid var(--accent5);
+  }
+  .cta-secondary:hover {
+    background: rgba(167,139,250,0.1);
+    color: var(--accent5);
+  }
+
+  /* Iron law list */
+  .iron-list {
+    list-style: none;
+    padding-left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .iron-list li {
+    padding: 12px 16px;
+    border-left: 3px solid var(--accent3);
+    background: var(--surface2);
+    border-radius: 2px;
+    font-size: 0.83rem;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .iron-list li strong {
+    color: var(--accent3);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    margin-right: 8px;
+  }
+  .iron-list li .ver {
+    color: var(--accent3);
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    margin-left: 6px;
+    opacity: 0.7;
+  }
+
+  /* Mermaid */
+  .mermaid-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 24px 20px;
+    margin-bottom: 20px;
+    overflow-x: auto;
+    transition: border-color .2s var(--ease);
+  }
+  .mermaid-wrap:hover { border-color: var(--border-bright); }
+  .mermaid-wrap .mermaid { text-align: center; min-height: 50px; }
+  .mermaid-caption {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+
+  /* Page footer */
+  .page-foot {
+    margin-top: 64px;
+    padding-top: 22px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .page-foot a {
+    color: var(--muted);
+    border-bottom: none;
+    transition: color .15s var(--ease);
+  }
+  .page-foot a:hover { color: var(--accent); }
+  .page-foot .built a { color: var(--accent); border-bottom: 1px dotted var(--border-bright); }
+  .page-foot .built a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Mobile menu toggle */
+  .menu-toggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 50;
+    background: var(--surface);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: background .15s var(--ease), border-color .15s var(--ease);
+  }
+  .menu-toggle:hover { background: var(--surface2); border-color: var(--accent); }
+
+  /* Inline lists in pages */
+  ol.steps {
+    list-style: none;
+    counter-reset: step;
+    padding-left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  ol.steps li {
+    counter-increment: step;
+    padding: 14px 18px 14px 64px;
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: var(--surface);
+    transition: border-color .2s var(--ease);
+  }
+  ol.steps li:hover { border-color: var(--border-bright); }
+  ol.steps li::before {
+    content: counter(step, decimal-leading-zero) ' →';
+    position: absolute;
+    left: 16px;
+    top: 14px;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    font-weight: 600;
+  }
+  ol.steps li strong { display: block; color: var(--text); font-size: 0.88rem; margin-bottom: 4px; }
+  ol.steps li p { font-size: 0.8rem; color: var(--muted); line-height: 1.6; }
+
+  /* Responsive */
+  @media (max-width: 980px) {
+    :root { --sidebar-w: 240px; }
+    .content { padding: 48px 32px 32px; }
+    .action-grid, .action-grid.three, .action-grid.four,
+    .flywheels { grid-template-columns: 1fr 1fr; }
+    .pipeline { grid-template-columns: repeat(3, 1fr); }
+    .agent-row { grid-template-columns: 180px 110px 1fr; }
+    .layer-header, .layer { grid-template-columns: 110px 1fr 130px 130px; }
+  }
+  @media (max-width: 720px) {
+    .app { flex-direction: column; }
+    .sidebar {
+      width: 100%;
+      flex: 0 0 auto;
+      height: auto;
+      max-height: 70vh;
+      position: fixed;
+      inset: 0 0 auto 0;
+      z-index: 40;
+      transform: translateY(-100%);
+      transition: transform .28s var(--ease);
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar.open { transform: translateY(0); }
+    .content { padding: 64px 18px 24px; max-width: 100%; }
+    .menu-toggle { display: inline-flex; align-items: center; gap: 6px; }
+    .action-grid, .action-grid.three, .action-grid.four,
+    .flywheels { grid-template-columns: 1fr; }
+    .pipeline { grid-template-columns: repeat(2, 1fr); }
+    .agent-row { grid-template-columns: 1fr; }
+    .agent-row span { border-right: none; border-bottom: 1px solid var(--border); }
+    .layer-header, .layer { grid-template-columns: 100px 1fr; }
+    .layer-cell:nth-child(3), .layer-cell:nth-child(4),
+    .layer-header span:nth-child(3), .layer-header span:nth-child(4) { display: none; }
+    .term-body { font-size: 0.72rem; padding: 16px 14px 18px; }
+    .term-body .huh { font-size: 0.66rem; }
+    .cta-list li { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .cta-list .il-tag { min-width: 0; }
+    .page-head h1 { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<button class="menu-toggle" aria-label="Toggle navigation">☰ Menu</button>
+
+<div class="app">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-row">
+        <h1>keystone-mcp</h1>
+      </div>
+      <p>v0.2.0 · the harness manager (MCP)</p>
+    </div>
+
+
+    <nav>
+      <div class="nav-group">
+        <span class="nav-label">Overview</span>
+        <a class="nav-link" href="#introduction">Introduction</a>
+        <a class="nav-link" href="#how-it-works">How it works</a>
+        <a class="nav-link" href="#envelope">Envelope shape</a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-label">Getting started</span>
+        <a class="nav-link" href="#install">Install</a>
+        <a class="nav-link" href="#quickstart">Quickstart</a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-label">MCP surface</span>
+        <a class="nav-link" href="#tools">Tools <span class="ext">— 14</span></a>
+        <a class="nav-link" href="#prompts">Prompts <span class="ext">— 4</span></a>
+        <a class="nav-link" href="#resources">Resources <span class="ext">— 9</span></a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-label">Configuration</span>
+        <a class="nav-link" href="#topics">Topics &amp; merge</a>
+        <a class="nav-link" href="#adapters">Source adapters</a>
+        <a class="nav-link" href="#classify">Classify selectors</a>
+        <a class="nav-link" href="#secrets">Secrets &amp; cache</a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-label">Harness</span>
+        <a class="nav-link" href="#scaffold">Scaffold &amp; patches</a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-label">Reference</span>
+        <a class="nav-link" href="https://github.com/tacoda/keystone-mcp/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a>
+        <a class="nav-link" href="https://github.com/tacoda/keystone-mcp/blob/main/FEATURE_PARITY_PLAN.md" target="_blank" rel="noopener">Roadmap <span class="ext">↗</span></a>
+        <a class="nav-link" href="https://pypi.org/project/keystone-mcp/" target="_blank" rel="noopener">PyPI <span class="ext">↗</span></a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-label">Support</span>
+        <a class="nav-link" href="#contribute">Contribute (OSS)</a>
+        <a class="nav-link" href="#huckleberry">Huckleberry <span class="ext">— services</span></a>
+      </div>
+    </nav>
+
+    <div class="sidebar-foot">
+      <a href="https://github.com/tacoda/keystone-mcp" target="_blank" rel="noopener">GitHub ↗</a>
+      <a href="https://pypi.org/project/keystone-mcp/" target="_blank" rel="noopener">PyPI ↗</a>
+      <a href="https://github.com/tacoda/keystone-mcp/discussions" target="_blank" rel="noopener">Discussions ↗</a>
+      <a href="https://github.com/tacoda/keystone-mcp/blob/main/LICENSE" target="_blank" rel="noopener">MIT License ↗</a>
+    </div>
+  </aside>
+
+  <main class="content">
+
+  <section id="introduction" class="page active" data-title="Introduction">
+    <div class="page-head">
+      <div class="crumb">Overview · keystone-mcp v0.2.0</div>
+      <h1>The <em class="hero-any rev">end-to-end</em> harness manager for <em class="hero-any">any</em> project.</h1>
+      <p class="tagline">A single MCP server (<code>keystone-mcp</code> on PyPI) that owns the full lifecycle of a project harness — scaffold the template tree under <code>.keystone/harness/</code>, broker rules and reasoning from any source (markdown, GitHub, Confluence, Notion, Jira, Linear, Slack), run sensors at phase boundaries, resolve a cascade across external sources, and apply forward-only shipped-template patches as the manager evolves. No central service. Markdown only. <code>uvx keystone-mcp</code> and your agent has a harness.</p>
+    </div>
+
+    <section class="hero-term">
+      <div class="term">
+        <div class="term-bar">
+          <span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span>
+          <span class="tlabel">~/your-app</span>
+        </div>
+        <div class="term-body">
+          <span class="pr">$</span> uvx keystone-mcp<br>
+          <span class="ok">●</span> keystone-mcp v0.2.0 ready &nbsp;<span class="dim">(FastMCP · stdio transport)</span><br>
+          <span class="pr">$</span> claude<br>
+          <span class="dim">&gt;</span> use keystone_harness_bootstrap to scaffold the harness<br>
+          <span class="ar">▸</span> scaffolding <span class="dim">→</span> .keystone/harness/{guides,corpus,sensors,actions,playbooks,skills,adapters}/<br>
+          <span class="ar">▸</span> wrote .keystone/context.yaml + CLAUDE.md overlay<br>
+          <span class="ar">▸</span> registered 4 prompts · 14 tools · 9 resources<br>
+          <span class="ok">✓</span> harness ready. agent sees keystone://context/list.<br>
+          <span class="dim">&gt;</span> list topics<div class="huh" id="huh-form">┌─ keystone_list_topics ─────────────────────────┐
+│ <span class="hcur">›</span> <span class="hsel">deploy-policy</span>    rules · reasoning      │
+│   release-checklist  skills                    │
+│   repo-ownership     rules (codeowners)        │
+└────────────────────────────────────────────────┘</div><span class="ar">▸</span> 3 topics · 2 sources<br>
+          <span class="ar" id="spark">✶</span> <span class="dim">Thinking… (<span id="elapsed">3</span>s · esc to interrupt)</span><span class="cursor"></span>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <section id="how-it-works" class="page" data-title="How it works">
+    <div class="page-head">
+      <div class="crumb">Overview · The broker model</div>
+      <h1>Agent asks for a topic. Broker fans out. One envelope returns.</h1>
+      <p class="tagline">Instead of cramming organizational context into every system prompt, the agent calls <code>keystone_get_context(topic)</code> or reads <code>keystone://context/{topic}</code> and the broker resolves the request across every configured source, classifies each fragment into one of four kinds, and returns a single typed envelope. The agent treats each kind differently.</p>
+    </div>
+
+    <div class="action-grid four">
+      <div class="action">
+        <span class="action-tag">constraints to obey</span>
+        <h3 style="color: var(--accent);"><code>rules</code></h3>
+        <p>Hard constraints. Three severities: <code>must</code> / <code>should</code> / <code>may</code>. When two sources contribute the same rule (normalized text match), highest severity wins; ties keep both citations.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">background &amp; intent</span>
+        <h3 style="color: var(--accent2);"><code>reasoning</code></h3>
+        <p>Why the rule exists, what incident drove it, what tradeoffs were considered. Reasoning is additive across sources — no deduplication.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">how-to playbooks</span>
+        <h3 style="color: var(--accent3);"><code>skills</code></h3>
+        <p>Multi-step procedural knowledge — how to deploy, how to roll back, how to run the release checklist. Each H3 inside the configured skills heading becomes one named skill.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">canned invocations</span>
+        <h3 style="color: var(--accent4);"><code>commands</code></h3>
+        <p>Shell commands, scripts, named recipes. Each H3 becomes one command; the first code block under it is the invocation, the rest is documentation.</p>
+      </div>
+    </div>
+
+    <div class="definition" style="margin-top: 24px;">
+      <p><strong>Why a broker.</strong> Organizational context lives where the people who own it already work — markdown in the repo, pages in Confluence, tickets in Jira, pinned messages in Slack. Hand-copying that context into every system prompt is brittle and goes stale fast. The broker turns each external source into a uniform envelope the agent can consume on demand, with per-topic TTLs and an optional sqlite cache.</p>
+    </div>
+  </section>
+
+  <section id="envelope" class="page" data-title="Envelope shape">
+    <div class="page-head">
+      <div class="crumb">Overview · The wire shape</div>
+      <h1>Every retrieval returns the same envelope.</h1>
+      <p class="tagline">Whether the topic resolves against one markdown file or fans out across markdown, GitHub, and Notion, the agent sees one consistent shape — four typed lists plus provenance.</p>
+    </div>
+
+<pre class="code">{
+  <span class="kw">"topic"</span>: <span class="ok">"deploy-policy"</span>,
+  <span class="kw">"rules"</span>: [
+    {
+      <span class="kw">"id"</span>: <span class="ok">"rules-001"</span>,
+      <span class="kw">"text"</span>: <span class="ok">"run full CI green before any production deploy."</span>,
+      <span class="kw">"source"</span>: <span class="ok">"markdown://deploy-policy.md#rules"</span>,
+      <span class="kw">"severity"</span>: <span class="ok">"must"</span>
+    }
+  ],
+  <span class="kw">"reasoning"</span>: [
+    {
+      <span class="kw">"text"</span>: <span class="ok">"The team adopted these rules after a 2025 incident."</span>,
+      <span class="kw">"source"</span>: <span class="ok">"markdown://deploy-policy.md#background"</span>
+    }
+  ],
+  <span class="kw">"skills"</span>: [],
+  <span class="kw">"commands"</span>: [],
+  <span class="kw">"fetched_at"</span>: <span class="ok">"2026-06-11T14:32:00+00:00"</span>,
+  <span class="kw">"cache_hit"</span>: <span class="ok">false</span>
+}</pre>
+
+    <p style="font-size: 0.85rem; color: var(--muted); line-height: 1.7; margin-top: 16px;">
+      <code>source</code> is a URI scheme — <code>markdown://</code>, <code>github://</code>, <code>confluence://</code>, <code>notion://</code>, <code>jira://</code>, <code>linear://</code>, <code>slack://</code>, <code>harness://</code>. The agent (or you) can trace any rule back to the file, page, or message it came from. <code>cache_hit</code> tells the agent whether to trust the freshness implied by the topic's TTL.
+    </p>
+  </section>
+
+  <section id="install" class="page" data-title="Install">
+    <div class="page-head">
+      <div class="crumb">Getting started · Install</div>
+      <h1>Install the MCP server, then wire it into your agent.</h1>
+      <p class="tagline">Published to PyPI as <code>keystone-mcp</code>. Pick the install method that matches how you already run Python tools. The server has no runtime daemon — it speaks MCP over stdio, started on demand by your agent.</p>
+    </div>
+
+    <div class="install-method">
+      <h3>uvx (zero-install one-shot)</h3>
+<pre class="code"><span class="prompt">$</span> uvx keystone-mcp</pre>
+      <p>Best for trying it out and for <code>.mcp.json</code> configs that should not pin a global install.</p>
+    </div>
+
+    <div class="install-method">
+      <h3>pip</h3>
+<pre class="code"><span class="prompt">$</span> pip install keystone-mcp
+<span class="prompt">$</span> pip install "keystone-mcp[tokens]"   <span class="comment"># + tiktoken-backed budget tokenizer</span></pre>
+      <p>Without the <code>tokens</code> extra, <code>keystone://harness/budget</code> falls back to a deterministic word-count proxy (~0.75 words / token). With the extra, the budget reports exact <code>cl100k_base</code> token counts.</p>
+    </div>
+
+    <div class="install-method">
+      <h3>pipx (isolated install + on PATH)</h3>
+<pre class="code"><span class="prompt">$</span> pipx install keystone-mcp</pre>
+    </div>
+
+    <div class="install-method">
+      <h3>From source</h3>
+<pre class="code"><span class="prompt">$</span> git clone https://github.com/tacoda/keystone-mcp.git
+<span class="prompt">$</span> cd keystone-mcp
+<span class="prompt">$</span> uv sync
+<span class="prompt">$</span> uv run keystone-mcp</pre>
+    </div>
+
+    <div class="section-label">Wire into a Claude Code (or any MCP host) project</div>
+    <p style="font-size: 0.85rem; color: var(--muted); line-height: 1.7; margin-bottom: 14px;">
+      Add to <code>.mcp.json</code>:
+    </p>
+<pre class="code">{
+  <span class="kw">"mcpServers"</span>: {
+    <span class="kw">"keystone"</span>: {
+      <span class="kw">"command"</span>: <span class="ok">"uvx"</span>,
+      <span class="kw">"args"</span>: [<span class="ok">"keystone-mcp"</span>],
+      <span class="kw">"env"</span>: {
+        <span class="kw">"KEYSTONE_CONFIG"</span>: <span class="ok">"/path/to/your/project/.keystone/context.yaml"</span>
+      }
+    }
+  }
+}</pre>
+
+    <p style="font-size: 0.78rem; color: var(--muted); font-family: var(--mono); margin-top: 12px; line-height: 1.7;">
+      <code>KEYSTONE_CONFIG</code> defaults to <code>.keystone/context.yaml</code> relative to the working directory. The <code>.keystone/</code> directory is team-shared and version-controlled — never put secrets there; reference env vars with the <code>env:</code> prefix instead.
+    </p>
+  </section>
+
+  <section id="quickstart" class="page" data-title="Quickstart">
+    <div class="page-head">
+      <div class="crumb">Getting started · Your first topic</div>
+      <h1>Three files to a working topic.</h1>
+      <p class="tagline">A topic is the agent-facing abstraction: a named bundle of rules, reasoning, skills, and commands resolved from one or more sources. Here is the smallest end-to-end shape — one markdown source, one topic, one file.</p>
+    </div>
+
+    <ol class="steps">
+      <li>
+        <strong>Create <code>.keystone/context.yaml</code></strong>
+<pre class="code"><span class="kw">sources:</span>
+  <span class="kw">docs:</span>
+    <span class="kw">type:</span> markdown
+    <span class="kw">root:</span> .keystone/context/
+
+<span class="kw">topics:</span>
+  <span class="kw">deploy-policy:</span>
+    <span class="kw">description:</span> |
+      Rules and context for production deploys.
+    <span class="kw">sources:</span>
+      - <span class="kw">source:</span> docs
+        <span class="kw">query:</span> { file: deploy-policy.md }
+        <span class="kw">classify:</span>
+          <span class="kw">rules:</span> { heading: <span class="ok">"Rules"</span>, severity: must }
+          <span class="kw">reasoning:</span> { heading: <span class="ok">"Background"</span> }
+    <span class="kw">cache:</span> 15m</pre>
+      </li>
+      <li>
+        <strong>Create <code>.keystone/context/deploy-policy.md</code></strong>
+<pre class="code"># Deploy Policy
+
+## Rules
+
+- MUST run full CI green before any production deploy.
+- SHOULD prefer Tuesday/Wednesday morning deploys.
+
+## Background
+
+The team adopted these rules after a 2025 incident.</pre>
+      </li>
+      <li>
+        <strong>Start the server. The agent sees the topic.</strong>
+        <p><code>keystone_list_topics</code> now returns <code>deploy-policy</code>. The agent reads <code>keystone://context/deploy-policy</code> and gets the envelope — one <code>must</code> rule, one <code>should</code> rule, one reasoning bullet, all cited back to the markdown file.</p>
+      </li>
+    </ol>
+
+    <p style="font-size: 0.78rem; color: var(--muted); font-family: var(--mono); margin-top: 16px; line-height: 1.7;">
+      The repo's own <a href="https://github.com/tacoda/keystone-mcp/blob/main/.keystone/context.yaml" target="_blank" rel="noopener">.keystone/context.yaml</a> is a working example with topics for deploys, ownership, coding standards, and a release playbook — plus commented-out examples of every external adapter.
+    </p>
+  </section>
+
+  <section id="tools" class="page" data-title="Tools">
+    <div class="page-head">
+      <div class="crumb">MCP surface · Tools</div>
+      <h1>Tools — parameterized retrieval and scaffold operations.</h1>
+      <p class="tagline">Every tool is prefixed <code>keystone_</code>. Retrieval tools return envelopes; scaffold tools materialize files under <code>.keystone/harness/</code> using the shipped templates.</p>
+    </div>
+
+    <div class="agents-table">
+      <div class="agent-row head">
+        <span>Tool</span>
+        <span>Purpose</span>
+        <span>Kind</span>
+      </div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_get_context(topic)</code></span><span class="agent-menu">full envelope (rules + reasoning + skills + commands)</span><span class="agent-status real">retrieval</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_list_topics(tag?)</code></span><span class="agent-menu">directory of configured topics, optionally filtered by tag</span><span class="agent-status real">retrieval</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_harness_bootstrap()</code></span><span class="agent-menu">scaffold the harness skeleton at <code>.keystone/harness/</code></span><span class="agent-status real">scaffold</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_new_guide(name, tier?)</code></span><span class="agent-menu">new guide; <code>tier</code> ∈ <code>iron-law</code> / <code>golden</code> / <code>rules</code></span><span class="agent-status real">scaffold</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_new_sensor(name, kind?, mode?)</code></span><span class="agent-menu">sensor + matching script (computational) or prompt (inferential)</span><span class="agent-status real">scaffold</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_new_script(name, body?)</code></span><span class="agent-menu">sensor script or ad-hoc shell script</span><span class="agent-status real">scaffold</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_new_prompt(name, body?)</code></span><span class="agent-menu">sensor prompt or ad-hoc prompt for inferential checks</span><span class="agent-status real">scaffold</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_new_skill(name, description?)</code></span><span class="agent-menu"><code>skills/&lt;name&gt;/SKILL.md</code>; manager-authored auto-prefixed <code>keystone-</code></span><span class="agent-status real">scaffold</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_new_action(name)</code></span><span class="agent-menu"><code>actions/&lt;name&gt;.md</code></span><span class="agent-status real">scaffold</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_new_playbook(name)</code></span><span class="agent-menu"><code>playbooks/&lt;name&gt;.md</code></span><span class="agent-status real">scaffold</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_new_corpus(name)</code></span><span class="agent-menu"><code>corpus/&lt;name&gt;.md</code></span><span class="agent-status real">scaffold</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_new_adapter(agent)</code></span><span class="agent-menu">per-agent adapter directory</span><span class="agent-status real">scaffold</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_target_add(agent, project_root?)</code></span><span class="agent-menu">install or refresh agent menu file (overlay; preserves user content)</span><span class="agent-status real">overlay</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone_apply_patches()</code></span><span class="agent-menu">apply pending shipped patches; skip user-modified files</span><span class="agent-status real">patch</span></div>
+    </div>
+
+    <p style="font-size: 0.78rem; color: var(--muted); font-family: var(--mono); margin-top: 16px; line-height: 1.7;">
+      Scaffold tools refuse to write files whose names look like secrets (<code>secret</code>, <code>token</code>, <code>credential</code>, <code>password</code>, <code>api_key</code>, <code>private</code>, <code>envfile</code>, …). The harness root is fixed at <code>.keystone/harness/</code> — not configurable.
+    </p>
+  </section>
+
+  <section id="prompts" class="page" data-title="Prompts">
+    <div class="page-head">
+      <div class="crumb">MCP surface · Prompts</div>
+      <h1>Prompts — lifecycle workflows the agent walks through.</h1>
+      <p class="tagline">Prompts seed multi-step conversations. The agent invokes a prompt, walks its phases, and calls scaffold tools along the way. Same broker, same envelope shape, but driven by a named workflow instead of a single retrieval.</p>
+    </div>
+
+    <div class="action-grid four">
+      <div class="action">
+        <span class="action-tag">one-time</span>
+        <h3 style="color: var(--accent);"><code>bootstrap()</code></h3>
+        <p>Codebase analysis + state ledger fill under <code>corpus/state/</code>. Run once after <code>keystone_harness_bootstrap</code> to seed the harness with what's actually in the repo today.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">end-to-end task</span>
+        <h3 style="color: var(--accent2);"><code>task(description)</code></h3>
+        <p>Six-phase workflow: spec → orient → implement → check-drift → verify → review. Each phase has its own gate; the prompt walks them in order.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">dual flywheel</span>
+        <h3 style="color: var(--accent3);"><code>audit()</code></h3>
+        <p>Learning (capture surprises) plus Pruning (retire stale rules). The two flywheels balance each other so the harness grows in surface area without growing in noise.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">capture</span>
+        <h3 style="color: var(--accent4);"><code>learn(finding)</code></h3>
+        <p>One-shot capture into <code>learning/inbox/</code>. Findings batch up between audits, then get promoted to rules during <code>audit</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="resources" class="page" data-title="Resources">
+    <div class="page-head">
+      <div class="crumb">MCP surface · Resources</div>
+      <h1>Resources — read-only retrieval, rooted at <code>keystone://</code>.</h1>
+      <p class="tagline">Resources expose the same broker as <code>keystone_get_context</code> through MCP's resource-URI shape. Agents that prefer URIs over tool calls (or hosts that surface resources in a sidebar) get the full envelope without invoking a tool.</p>
+    </div>
+
+    <div class="agents-table">
+      <div class="agent-row head">
+        <span>URI</span>
+        <span>Purpose</span>
+        <span>Kind</span>
+      </div>
+      <div class="agent-row"><span class="agent-name"><code>keystone://context/list</code></span><span class="agent-menu">configured topic directory</span><span class="agent-status real">topics</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone://context/{topic}</code></span><span class="agent-menu">full envelope for one topic</span><span class="agent-status real">topics</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone://source/{name}/health</code></span><span class="agent-menu">adapter reachability + auth state</span><span class="agent-status real">sources</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone://harness/status</code></span><span class="agent-menu">harness layout audit (root = <code>.keystone/harness/</code>)</span><span class="agent-status real">harness</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone://harness/options</code></span><span class="agent-menu">valid scaffold-tool arguments</span><span class="agent-status real">harness</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone://harness/verify</code></span><span class="agent-menu">cascade report (resolved, unreachable, canonical violations, gaps, conflicts)</span><span class="agent-status real">cascade</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone://harness/doctor</code></span><span class="agent-menu">verify + path conformance + ambient-load budget proxy</span><span class="agent-status real">cascade</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone://harness/patch/pending</code></span><span class="agent-menu">pending shipped patches and detected conflicts</span><span class="agent-status real">patches</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone://harness/budget</code></span><span class="agent-menu">ambient-load budget per-port + hot files + approximate tokens</span><span class="agent-status real">budget</span></div>
+    </div>
+  </section>
+
+  <section id="topics" class="page" data-title="Topics">
+    <div class="page-head">
+      <div class="crumb">Configuration · Topics</div>
+      <h1>Topics bind one or more sources to one envelope.</h1>
+      <p class="tagline">Each topic declares the sources to consult and how their output maps into the four kinds. Multi-source topics let one envelope draw rules from CODEOWNERS, branch protection, and the team's own deploy policy markdown — without the agent having to know any of that exists.</p>
+    </div>
+
+    <div class="section-label">Multi-source topic</div>
+<pre class="code"><span class="kw">topics:</span>
+  <span class="kw">repo-policy:</span>
+    <span class="kw">description:</span> Combined ownership and branch-protection rules.
+    <span class="kw">sources:</span>
+      - <span class="kw">source:</span> docs
+        <span class="kw">query:</span> { file: owners.md }
+        <span class="kw">classify:</span>
+          <span class="kw">rules:</span> { heading: <span class="ok">"Required reviewers"</span> }
+      - <span class="kw">source:</span> gh
+        <span class="kw">query:</span> { type: codeowners }
+      - <span class="kw">source:</span> gh
+        <span class="kw">query:</span> { type: branch_protection, branch: main }
+    <span class="kw">cache:</span> 5m</pre>
+
+    <div class="section-label">Shorthand for a single source</div>
+<pre class="code"><span class="kw">topics:</span>
+  <span class="kw">rollback:</span>
+    <span class="kw">description:</span> Rollback procedure.
+    <span class="kw">source:</span> docs
+    <span class="kw">query:</span> { file: rollback.md }
+    <span class="kw">classify:</span>
+      <span class="kw">rules:</span> { heading: <span class="ok">"Rules"</span> }</pre>
+
+    <div class="definition" style="margin-top: 24px;">
+      <p><strong>Multi-source merge.</strong> When two sources contribute rules whose normalized text matches, the highest severity wins (<code>must</code> &gt; <code>should</code> &gt; <code>may</code>). Ties at the top severity keep both rules so each source stays cited. Reasoning, skills, and commands stay additive — no deduplication.</p>
+      <p><strong>Per-topic TTL.</strong> Cache uses <code>5s</code> / <code>10m</code> / <code>2h</code> / <code>1d</code> syntax. Default backend is in-memory (lost on restart); switch to sqlite for persistence across server restarts.</p>
+    </div>
+  </section>
+
+  <section id="adapters" class="page" data-title="Adapters">
+    <div class="page-head">
+      <div class="crumb">Configuration · Source adapters</div>
+      <h1>Adapters — one per source type.</h1>
+      <p class="tagline">Each <code>type:</code> in <code>.keystone/context.yaml</code> picks an adapter. Markdown and folder adapters are repo-local and need no credentials; remote adapters reference environment variables via the <code>env:</code> prefix.</p>
+    </div>
+
+    <div class="agents-table">
+      <div class="agent-row head">
+        <span>Type</span>
+        <span>Auth</span>
+        <span>What it emits</span>
+      </div>
+      <div class="agent-row"><span class="agent-name"><code>markdown</code></span><span class="agent-menu">none (repo-local)</span><span class="agent-status real">one file → all four kinds</span></div>
+      <div class="agent-row"><span class="agent-name"><code>folder</code></span><span class="agent-menu">none (repo-local)</span><span class="agent-status real">walks tree; <code>include</code>/<code>exclude</code> globs</span></div>
+      <div class="agent-row"><span class="agent-name"><code>repo</code></span><span class="agent-menu">depends on remote</span><span class="agent-status real">resolves <code>owner/repo@version</code> or git URL; immutable cache for tag/sha refs</span></div>
+      <div class="agent-row"><span class="agent-name"><code>github</code></span><span class="agent-menu">PAT</span><span class="agent-status real">CODEOWNERS, branch protection (rules); PRs, releases (reasoning)</span></div>
+      <div class="agent-row"><span class="agent-name"><code>confluence</code></span><span class="agent-menu">email + API token</span><span class="agent-status real">page content (all four kinds)</span></div>
+      <div class="agent-row"><span class="agent-name"><code>notion</code></span><span class="agent-menu">integration token</span><span class="agent-status real">page content (all four kinds), DB rows (reasoning)</span></div>
+      <div class="agent-row"><span class="agent-name"><code>jira</code></span><span class="agent-menu">email + API token</span><span class="agent-status real">issues, JQL search (reasoning)</span></div>
+      <div class="agent-row"><span class="agent-name"><code>linear</code></span><span class="agent-menu">personal API key</span><span class="agent-status real">issues, GraphQL filter (reasoning)</span></div>
+      <div class="agent-row"><span class="agent-name"><code>slack</code></span><span class="agent-menu">bot OAuth token</span><span class="agent-status real">pinned messages (rules), recent discussion (reasoning)</span></div>
+      <div class="agent-row"><span class="agent-name"><code>harness</code></span><span class="agent-menu">none</span><span class="agent-status real">the project's own <code>.keystone/harness/</code> tree</span></div>
+    </div>
+  </section>
+
+  <section id="classify" class="page" data-title="Classify">
+    <div class="page-head">
+      <div class="crumb">Configuration · Classify selectors</div>
+      <h1>Classify — how an adapter's output maps into the four kinds.</h1>
+      <p class="tagline">The <code>markdown</code>, <code>confluence</code>, and <code>notion</code> adapters share a heading-based vocabulary. Sections split by H2; skills and commands sub-split by H3. For <code>github</code> / <code>jira</code> / <code>linear</code> / <code>slack</code> the <code>query.type</code> determines the kind directly.</p>
+    </div>
+
+<pre class="code"><span class="kw">classify:</span>
+  <span class="kw">rules:</span>
+    <span class="kw">heading:</span> <span class="ok">"Rules"</span>             <span class="comment"># single or list: ["Rules", "Must"]</span>
+    <span class="kw">severity:</span> must               <span class="comment"># default when bullets lack MUST/SHOULD/MAY</span>
+  <span class="kw">reasoning:</span>
+    <span class="kw">heading:</span> <span class="ok">"Background"</span>
+    <span class="comment"># or</span>
+    <span class="kw">all:</span> true                    <span class="comment"># everything not matched by another kind</span>
+  <span class="kw">skills:</span>
+    <span class="kw">heading:</span> <span class="ok">"Procedures"</span>       <span class="comment"># each H3 → one skill (name + body)</span>
+  <span class="kw">commands:</span>
+    <span class="kw">heading:</span> <span class="ok">"Commands"</span>         <span class="comment"># each H3 → one command (first code block = invocation)</span></pre>
+  </section>
+
+  <section id="secrets" class="page" data-title="Secrets &amp; cache">
+    <div class="page-head">
+      <div class="crumb">Configuration · Secrets and cache</div>
+      <h1>Secrets stay in the environment. Cache survives restarts on request.</h1>
+      <p class="tagline">Never put secrets in <code>.keystone/context.yaml</code> — that file is version-controlled and team-shared. Reference environment variables with the <code>env:</code> prefix; the loader fails fast at startup if a referenced var is unset.</p>
+    </div>
+
+    <div class="section-label">Env-var references</div>
+<pre class="code"><span class="kw">sources:</span>
+  <span class="kw">gh:</span>
+    <span class="kw">type:</span> github
+    <span class="kw">repo:</span> acme/widgets
+    <span class="kw">auth:</span> env:GITHUB_TOKEN</pre>
+
+    <div class="section-label">Persistent cache</div>
+<pre class="code"><span class="kw">cache:</span>
+  <span class="kw">backend:</span> sqlite
+  <span class="kw">path:</span> .keystone/cache.db</pre>
+
+    <p style="font-size: 0.85rem; color: var(--muted); line-height: 1.7; margin-top: 16px;">
+      Default backend is in-memory (lost on restart). The sqlite backend persists envelopes across server restarts and survives <code>uvx</code> re-invocations. Per-topic TTLs use <code>5s</code> / <code>10m</code> / <code>2h</code> / <code>1d</code> syntax.
+    </p>
+  </section>
+
+  <section id="scaffold" class="page" data-title="Scaffold">
+    <div class="page-head">
+      <div class="crumb">Harness · Scaffolding</div>
+      <h1>Scaffold once. Edit the markdown. Patch forward.</h1>
+      <p class="tagline">The <code>keystone_new_*</code> tools materialize files under <code>.keystone/harness/</code> from shipped templates. Once written, the files are yours to edit. When a new template version ships, <code>keystone_apply_patches</code> applies the forward-only diff against unmodified files and skips anything you've touched.</p>
+    </div>
+
+    <div class="action-grid three">
+      <div class="action">
+        <span class="action-tag">templates</span>
+        <h3 style="color: var(--accent);">Shipped templates</h3>
+        <p>Every primitive (guide, sensor, action, playbook, skill, corpus, adapter) has a shipped template. Scaffolding writes the template verbatim; the broker doesn't care which fields you change.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">overlay</span>
+        <h3 style="color: var(--accent2);">Menu-file overlay</h3>
+        <p><code>keystone_target_add(agent)</code> installs the agent's menu file (CLAUDE.md, AGENTS.md, …) at the project root as an overlay — pre-existing user content is preserved, only the Keystone-managed block is rewritten.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">forward-only patches</span>
+        <h3 style="color: var(--accent3);">Apply patches</h3>
+        <p><code>keystone_apply_patches()</code> walks pending shipped patches and applies each one to files you haven't modified. Conflicts surface in <code>keystone://harness/patch/pending</code> for manual resolution.</p>
+      </div>
+    </div>
+
+    <div class="definition" style="margin-top: 24px;">
+      <p><strong>Secret-name refusal.</strong> Scaffold tools refuse to write files whose names look like secrets — <code>secret</code>, <code>token</code>, <code>credential</code>, <code>password</code>, <code>api_key</code>, <code>private</code>, <code>envfile</code>, and the obvious variations. The <code>.keystone/</code> directory is team-shared; the scaffolder doesn't make it easy to accidentally commit a secret.</p>
+      <p><strong>Skills are FastMCP-native.</strong> Manager-authored skills under <code>.keystone/harness/skills/&lt;name&gt;/SKILL.md</code> are auto-prefixed <code>keystone-</code> and discovered by FastMCP's <code>SkillsDirectoryProvider</code> — Claude Code, Cursor, and any other FastMCP-aware host load them automatically.</p>
+    </div>
+  </section>
+
+  <section id="contribute" class="page" data-title="Contribute">
+    <div class="page-head">
+      <div class="crumb">Support · Open source</div>
+      <h1>Contribute to keystone-mcp.</h1>
+      <p class="tagline">MIT-licensed and built in the open. The test suite uses <code>respx</code> to mock every external API — no live credentials required to run the full 361-test suite locally.</p>
+    </div>
+
+    <div class="cta-card alt">
+      <p class="cta-headline">The broker model only works if the adapters fit the sources teams actually use.</p>
+      <p class="cta-body">Markdown, GitHub, Confluence, Notion, Jira, Linear, Slack, and harness-local are wired today. If your team's source of truth lives somewhere else — Coda, Linear docs, an internal wiki, a Google Doc — the adapter shape is small and the test fixtures are the bulk of the work.</p>
+      <ul class="cta-list">
+        <li><span class="il-tag">Use it</span><span>Tell us where the defaults match — or clash with — what you've already built. We learn the most from people who've tried something else first.</span></li>
+        <li><span class="il-tag">Hit a bug</span><span>File it, even with a rough repro. The cascade, classify, and merge paths get sharper every time someone shows us a corner we missed.</span></li>
+        <li><span class="il-tag">Write an adapter</span><span>Each adapter is a single module under <code>src/keystone_mcp/adapters/</code> plus a respx-mocked test file. New sources land in a single PR.</span></li>
+        <li><span class="il-tag">Author a template</span><span>The shipped template tree under <code>.keystone/harness/</code> is the manager's opinion — guides, sensors, actions, playbooks, skills. Improvements ship as forward-only patches.</span></li>
+      </ul>
+      <div class="cta-buttons">
+        <a class="cta-btn cta-primary" href="https://github.com/tacoda/keystone-mcp/discussions" target="_blank" rel="noopener">▸ Start a Discussion</a>
+        <a class="cta-btn cta-secondary" href="https://github.com/tacoda/keystone-mcp/issues" target="_blank" rel="noopener">◆ Open an Issue</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="huckleberry" class="page" data-title="Huckleberry">
+    <div class="page-head">
+      <div class="crumb">Support · Services</div>
+      <h1>Huckleberry — adoption support for keystone-mcp.</h1>
+      <p class="tagline">keystone-mcp is open source. <strong>Huckleberry</strong> is the consulting firm that helps teams adopt it well — wiring it into your MCP host, authoring topics that match how your org actually documents policy, and tuning the broker so the agent sees the right context without drowning in it.</p>
+    </div>
+
+    <div class="cta-card">
+      <p class="cta-headline">When the open-source bits aren't the whole answer.</p>
+      <p class="cta-body">Most teams can get keystone-mcp running in an afternoon. The question that matters six months later is <em>does the agent actually catch what your team would have caught at review?</em> — and that takes deliberate work: authoring topics for the policies your team already enforces in PRs, calibrating severity tiers to the way your team actually ships, and closing the source gaps the defaults can't cover.</p>
+      <ul class="cta-list">
+        <li><span class="il-tag">Rollout</span><span>Wire keystone-mcp into your MCP host across a multi-repo codebase with the right topic taxonomy and source mix from day one.</span></li>
+        <li><span class="il-tag">Topic authoring</span><span>Translate your existing review comments, deploy runbooks, and incident postmortems into topics the agent can read on demand.</span></li>
+        <li><span class="il-tag">Source tuning</span><span>Adapter selection, classify selectors, TTL strategy, multi-source merge tuning — get the right shape for your team's actual sources of truth.</span></li>
+        <li><span class="il-tag">Custom adapters</span><span>If your source of truth lives somewhere keystone-mcp doesn't already speak, we'll write the adapter (and the respx-mocked tests) and upstream it.</span></li>
+      </ul>
+      <div class="cta-buttons">
+        <a class="cta-btn cta-primary" href="https://tacoda.dev/huckleberry/" target="_blank" rel="noopener">▸ Visit Huckleberry</a>
+        <a class="cta-btn cta-secondary" href="https://www.tacoda.dev/" target="_blank" rel="noopener">◆ About Ian Johnson</a>
+      </div>
+    </div>
+
+    <p style="font-size: 0.78rem; color: var(--muted); font-family: var(--mono); margin-top: 16px; line-height: 1.7;">Huckleberry is run by <a href="https://www.tacoda.dev/" target="_blank" rel="noopener">Ian Johnson</a>, the author of keystone-mcp. Engagements are scoped per-team and per-codebase; expect a deliberate, small-batch approach.</p>
+  </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  // ---------- Mermaid configuration ----------
+  if (window.mermaid) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: {
+        background: '#13161d',
+        primaryColor: '#1a1e28',
+        primaryTextColor: '#e2e8f0',
+        primaryBorderColor: '#252a38',
+        lineColor: '#64748b',
+        secondaryColor: '#1a1e28',
+        tertiaryColor: '#13161d',
+        clusterBkg: '#0d0f14',
+        clusterBorder: '#252a38',
+        edgeLabelBackground: '#0d0f14',
+        fontFamily: 'IBM Plex Mono, monospace',
+        fontSize: '13px'
+      },
+      flowchart: { curve: 'basis', padding: 18, htmlLabels: true }
+    });
+  }
+
+  // ---------- SPA router ----------
+  (function(){
+    var pages = document.querySelectorAll('.page');
+    var links = document.querySelectorAll('.nav-link');
+    var menuToggle = document.querySelector('.menu-toggle');
+    var sidebar = document.getElementById('sidebar');
+    var renderedMermaid = new Set();
+
+    function setActive(id) {
+      var found = false;
+      pages.forEach(function(p){
+        if (p.id === id) { p.classList.add('active'); found = true; }
+        else p.classList.remove('active');
+      });
+      if (!found) {
+        // fallback to introduction
+        document.getElementById('introduction').classList.add('active');
+        id = 'introduction';
+      }
+      links.forEach(function(a){
+        var href = a.getAttribute('href') || '';
+        a.classList.toggle('active', href === '#' + id);
+      });
+      // Render any mermaid in the now-active page once
+      var page = document.getElementById(id);
+      if (page && window.mermaid) {
+        var nodes = page.querySelectorAll('.mermaid');
+        var pending = [];
+        nodes.forEach(function(n){
+          if (!renderedMermaid.has(n)) pending.push(n);
+        });
+        if (pending.length) {
+          try {
+            mermaid.run({ nodes: pending });
+            pending.forEach(function(n){ renderedMermaid.add(n); });
+          } catch(e) { /* mermaid may throw on already-rendered nodes; ignore */ }
+        }
+      }
+      // Scroll content to top on section change
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Close mobile sidebar
+      if (sidebar) sidebar.classList.remove('open');
+      // Update document title
+      var pageEl = document.getElementById(id);
+      var title = pageEl && pageEl.dataset && pageEl.dataset.title ? pageEl.dataset.title : '';
+      document.title = title ? ('keystone-mcp — ' + title) : 'keystone-mcp';
+    }
+
+    function routeFromHash() {
+      var hash = (location.hash || '').replace(/^#/, '');
+      if (!hash) hash = 'introduction';
+      setActive(hash);
+    }
+
+    window.addEventListener('hashchange', routeFromHash);
+    routeFromHash();
+
+    // Mobile menu toggle
+    if (menuToggle && sidebar) {
+      menuToggle.addEventListener('click', function(){
+        sidebar.classList.toggle('open');
+      });
+    }
+  })();
+
+  // ---------- Terminal hero animation ----------
+  (function(){
+    var hf = document.getElementById('huh-form');
+    var sp = document.getElementById('spark');
+    var el = document.getElementById('elapsed');
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (hf && !reduce) {
+      var forms = [
+        '┌─ keystone_list_topics ─────────────────────────┐\n' +
+        '│ <span class="hcur">›</span> <span class="hsel">deploy-policy</span>    rules · reasoning      │\n' +
+        '│   release-checklist  skills                    │\n' +
+        '│   repo-ownership     rules (codeowners)        │\n' +
+        '└────────────────────────────────────────────────┘',
+
+        '┌─ keystone://context/deploy-policy ─────────────┐\n' +
+        '│ <span class="hcur">›</span> rules     <span class="hsel">2</span>  must · should           │\n' +
+        '│   reasoning <span class="hsel">1</span>  background bullet        │\n' +
+        '│   skills    0                                  │\n' +
+        '└────────────────────────────────────────────────┘',
+
+        '┌─ Adapter health · keystone://source/*/health ──┐\n' +
+        '│ <span class="hcur">›</span> <span class="hsel">docs</span>        markdown      ✓ ok        │\n' +
+        '│   gh          github        ✓ ok (PAT)        │\n' +
+        '│   wiki        confluence    ✓ ok              │\n' +
+        '└────────────────────────────────────────────────┘',
+
+        '┌─ keystone://harness/verify · cascade ──────────┐\n' +
+        '│ <span class="hcur">›</span> resolved              <span class="hsel">14</span>             │\n' +
+        '│   unreachable           0                      │\n' +
+        '│   canonical_violations  0                      │\n' +
+        '│   required_gaps         0                      │\n' +
+        '└────────────────────────────────────────────────┘',
+
+        '┌─ keystone://harness/budget · ambient load ─────┐\n' +
+        '│ <span class="hcur">›</span> <span class="hsel">guides/</span>      8,412 tokens · 5 files   │\n' +
+        '│   corpus/      11,203 tokens · 9 files         │\n' +
+        '│   actions/      3,932 tokens · 4 files         │\n' +
+        '└────────────────────────────────────────────────┘'
+      ];
+      var fi = 0;
+      setInterval(function(){ fi = (fi + 1) % forms.length; hf.innerHTML = forms[fi]; }, 2200);
+    }
+
+    if (sp && !reduce) {
+      var sparks = ['✶','✳','✺','✸','✦'], si = 0;
+      setInterval(function(){ si = (si + 1) % sparks.length; sp.textContent = sparks[si]; }, 240);
+    }
+
+    if (el && !reduce) {
+      var t = 3;
+      setInterval(function(){ t = (t + 1) % 60; el.textContent = t; }, 1000);
+    }
+  })();
+</script>
+
+</body>
+</html>
