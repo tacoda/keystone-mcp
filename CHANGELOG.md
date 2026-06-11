@@ -6,6 +6,16 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 26 — edit-path triad tests
+
+New `tests/test_edit_path_triad.py` asserts that the same logical
+operation produces byte-identical output across the MCP-tool path
+(`Scaffold.new_*`), the shipped-skill path (same scaffolder, walked
+by an agent), and a direct filesystem write (a human editor
+producing `render_*(name)`). Ten cases — guide, sensor (both modes),
+skill, adapter, action, playbook, corpus, script, prompt. Catches
+template drift before users see it.
+
 ### Phase 25 — re-brand to "Keystone Harness Manager"
 
 User-facing branding shifts. The package name on PyPI stays
