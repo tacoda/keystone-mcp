@@ -127,7 +127,7 @@ release playbook (plus commented-out examples of every external adapter).
 | `keystone_get_context(topic)` | full envelope (rules + reasoning + skills + commands) |
 | `keystone_list_topics(tag?)` | directory of configured topics |
 | `keystone_harness_bootstrap()` | scaffold the harness skeleton at `.keystone/harness/` |
-| `keystone_new_guide(name, tier?)` | scaffold a new guide |
+| `keystone_new_guide(name, tier?)` | scaffold a new guide; `tier` ∈ `iron-law` / `golden` / `rules` |
 | `keystone_new_sensor(name, kind?, mode?)` | scaffold a sensor + matching script (computational) or prompt (inferential) |
 | `keystone_new_script(name, body?)` | scaffold a sensor script (or ad-hoc shell script) |
 | `keystone_new_prompt(name, body?)` | scaffold a sensor prompt (or ad-hoc prompt for inferential checks) |

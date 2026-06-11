@@ -21,10 +21,10 @@ from keystone_mcp.harness_scaffold import (
 # Render functions ---------------------------------------------------------
 
 
-def test_render_guide_non_negotiable_section_present():
-    out = render_guide("dangerous-actions", "non-negotiable")
+def test_render_guide_iron_law_section_present():
+    out = render_guide("dangerous-actions", "iron-law")
     assert out.startswith("# Dangerous Actions\n")
-    assert "## NON-NEGOTIABLE" in out
+    assert "## IRON LAW" in out
     assert "never be violated" in out
 
 
@@ -34,9 +34,9 @@ def test_render_guide_rules_default():
     assert "<regular rule" in out
 
 
-def test_render_guide_strong_tier():
-    out = render_guide("preferred", "strong")
-    assert "## STRONG" in out
+def test_render_guide_golden_tier():
+    out = render_guide("preferred", "golden")
+    assert "## GOLDEN RULES" in out
     assert "deviation requires explicit reasoning" in out
 
 
@@ -45,12 +45,14 @@ def test_render_guide_invalid_tier_raises():
         render_guide("x", "bogus")
 
 
-def test_render_guide_rejects_old_tier_names():
-    # The rename dropped the legacy keystone names.
-    with pytest.raises(ScaffoldError):
-        render_guide("x", "iron-law")
-    with pytest.raises(ScaffoldError):
-        render_guide("x", "golden")
+def test_render_guide_rejects_legacy_tier_names_with_migration_hint():
+    # Phase 17 renamed non-negotiable → iron-law, strong → golden.
+    # Legacy names now raise with a migration message pointing at the
+    # new vocabulary.
+    with pytest.raises(ScaffoldError, match="iron-law"):
+        render_guide("x", "non-negotiable")
+    with pytest.raises(ScaffoldError, match="golden"):
+        render_guide("x", "strong")
 
 
 def test_render_sensor_writes_frontmatter():
@@ -126,33 +128,47 @@ def test_render_agent_menu_warns_about_secrets():
 
 def test_render_agent_menu_documents_strictness_cascade():
     out = render_agent_menu(".keystone/harness")
-    assert "Non-negotiable" in out
-    assert "Strong" in out
+    assert "Iron law" in out
+    assert "Golden rule" in out
     assert "preferred path" in out.lower() or "preferred-path" in out.lower()
 
 
 def test_render_agent_menu_inlines_provided_sections():
     sections = {
-        "non-negotiable": [
+        "iron-law": [
             ("guides/dangerous.md", "**NEVER push to main directly.**"),
         ],
-        "strong": [
+        "golden": [
             ("guides/quality.md", "- Run sensors before commit."),
         ],
     }
     out = render_agent_menu(".keystone/harness", sections=sections)
-    assert "## Non-negotiable rules" in out
+    assert "## Iron laws" in out
     assert "NEVER push to main directly" in out
     assert "guides/dangerous.md" in out
-    assert "## Strong rules" in out
+    assert "## Golden rules" in out
     assert "Run sensors before commit" in out
     assert "guides/quality.md" in out
 
 
 def test_render_agent_menu_empty_sections_omits_inlined_sections():
     out = render_agent_menu(".keystone/harness", sections=None)
-    assert "## Non-negotiable rules" not in out
-    assert "## Strong rules" not in out
+    assert "## Iron laws" not in out
+    assert "## Golden rules" not in out
+
+
+def test_render_agent_menu_accepts_legacy_section_keys_transitionally():
+    # Phase 17 keeps the legacy section keys readable so callers that still
+    # produce them get the right inlined output without an upgrade lockstep.
+    sections = {
+        "non-negotiable": [("guides/old.md", "**legacy iron law body.**")],
+        "strong": [("guides/old2.md", "- legacy golden rule body.")],
+    }
+    out = render_agent_menu(".keystone/harness", sections=sections)
+    assert "## Iron laws" in out
+    assert "legacy iron law body" in out
+    assert "## Golden rules" in out
+    assert "legacy golden rule body" in out
 
 
 # Scaffold (write side) ----------------------------------------------------
@@ -206,10 +222,10 @@ def test_new_guide_overwrites_with_force(tmp_path):
     s.bootstrap()
     s.new_guide("x", tier="rules")
     original = (s.root / "guides" / "x.md").read_text()
-    s.new_guide("x", tier="strong", force=True)
+    s.new_guide("x", tier="golden", force=True)
     updated = (s.root / "guides" / "x.md").read_text()
     assert original != updated
-    assert "## STRONG" in updated
+    assert "## GOLDEN RULES" in updated
 
 
 def test_new_guide_invalid_name_rejected(tmp_path):
@@ -394,18 +410,18 @@ def test_target_add_writes_menu_file_at_project_root(tmp_path):
     assert "Never put secrets" in body
 
 
-def test_target_add_inlines_non_negotiable_and_strong_rules(tmp_path):
+def test_target_add_inlines_iron_law_and_golden_rules(tmp_path):
     s = _scaffold(tmp_path)
     s.bootstrap()
     # Drop a guide with both tiers.
     (s.root / "guides" / "dangerous.md").write_text(
         """# Dangerous
 
-## NON-NEGOTIABLE
+## IRON LAW
 
 **Never push directly to main.**
 
-## STRONG
+## GOLDEN RULES
 
 - Run sensors before commit.
 
@@ -428,7 +444,7 @@ def test_target_add_refresh_picks_up_rule_edits(tmp_path):
     s = _scaffold(tmp_path)
     s.bootstrap()
     (s.root / "guides" / "x.md").write_text(
-        "# x\n\n## NON-NEGOTIABLE\n\n**Original rule.**\n"
+        "# x\n\n## IRON LAW\n\n**Original rule.**\n"
     )
     project = tmp_path / "proj"
     project.mkdir()
@@ -438,7 +454,7 @@ def test_target_add_refresh_picks_up_rule_edits(tmp_path):
 
     # Edit the guide. target_add(force=True) should regenerate.
     (s.root / "guides" / "x.md").write_text(
-        "# x\n\n## NON-NEGOTIABLE\n\n**Updated rule.**\n"
+        "# x\n\n## IRON LAW\n\n**Updated rule.**\n"
     )
     s.target_add("claude-code", project_root=project, force=True)
     second = (project / "CLAUDE.md").read_text()
@@ -448,49 +464,56 @@ def test_target_add_refresh_picks_up_rule_edits(tmp_path):
 
 def test_extract_tier_sections_returns_empty_when_no_guides(tmp_path):
     sections = extract_tier_sections(tmp_path)
-    assert sections == {"non-negotiable": [], "strong": []}
+    assert sections == {"iron-law": [], "golden": []}
 
 
 def test_extract_tier_sections_walks_nested_guides(tmp_path):
     (tmp_path / "guides" / "process").mkdir(parents=True)
     (tmp_path / "guides" / "process" / "a.md").write_text(
-        "# a\n\n## NON-NEGOTIABLE\n\nrule A.\n\n## STRONG\n\n- rule B.\n"
+        "# a\n\n## IRON LAW\n\nrule A.\n\n## GOLDEN RULES\n\n- rule B.\n"
     )
     (tmp_path / "guides" / "b.md").write_text(
-        "# b\n\n## STRONG\n\n- rule C.\n"
+        "# b\n\n## GOLDEN RULES\n\n- rule C.\n"
     )
     sections = extract_tier_sections(tmp_path)
-    nn = sections["non-negotiable"]
-    strong = sections["strong"]
-    assert len(nn) == 1
-    assert "rule A" in nn[0][1]
-    assert nn[0][0] == "guides/process/a.md"
-    assert len(strong) == 2
-    sources = sorted(s for s, _ in strong)
+    iron = sections["iron-law"]
+    golden = sections["golden"]
+    assert len(iron) == 1
+    assert "rule A" in iron[0][1]
+    assert iron[0][0] == "guides/process/a.md"
+    assert len(golden) == 2
+    sources = sorted(s for s, _ in golden)
     assert sources == ["guides/b.md", "guides/process/a.md"]
 
 
-def test_extract_tier_sections_recognizes_legacy_headings(tmp_path):
+def test_extract_tier_sections_reads_legacy_headings_transitionally(tmp_path):
+    # Phase 17 keeps a one-release transitional read for the pre-rename
+    # heading names — ## NON-NEGOTIABLE and ## STRONG. New writes always
+    # use the new headings; legacy guides keep producing sections.
     (tmp_path / "guides").mkdir()
     (tmp_path / "guides" / "legacy.md").write_text(
-        "# legacy\n\n## IRON LAW\n\n**Legacy IRON LAW text.**\n\n"
-        "## GOLDEN RULES\n\n- Legacy golden rule.\n"
+        "# legacy\n\n## NON-NEGOTIABLE\n\n**Legacy iron law body.**\n\n"
+        "## STRONG\n\n- Legacy golden rule body.\n"
     )
     sections = extract_tier_sections(tmp_path)
-    assert any("IRON LAW text" in body for _, body in sections["non-negotiable"])
-    assert any("Legacy golden rule" in body for _, body in sections["strong"])
+    assert any(
+        "iron law body" in body for _, body in sections["iron-law"]
+    )
+    assert any(
+        "golden rule body" in body for _, body in sections["golden"]
+    )
 
 
 def test_extract_tier_sections_skips_readme(tmp_path):
     (tmp_path / "guides").mkdir()
     (tmp_path / "guides" / "README.md").write_text(
-        "## NON-NEGOTIABLE\n\nshould-not-show.\n"
+        "## IRON LAW\n\nshould-not-show.\n"
     )
     (tmp_path / "guides" / "real.md").write_text(
-        "## NON-NEGOTIABLE\n\nincluded.\n"
+        "## IRON LAW\n\nincluded.\n"
     )
     sections = extract_tier_sections(tmp_path)
-    bodies = [b for _, b in sections["non-negotiable"]]
+    bodies = [b for _, b in sections["iron-law"]]
     assert "included." in bodies
     assert not any("should-not-show" in b for b in bodies)
 
@@ -558,7 +581,7 @@ def test_status_when_root_missing(tmp_path):
 
 def test_options_catalog_lists_choices():
     cat = options_catalog()
-    assert set(cat["guide_tiers"]) == {"non-negotiable", "strong", "rules"}
+    assert set(cat["guide_tiers"]) == {"iron-law", "golden", "rules"}
     assert "build" in cat["sensor_kinds"]
     assert "claude-code" in cat["supported_agents"]
     assert "CLAUDE.md" in cat["agent_menu_files"]["claude-code"]

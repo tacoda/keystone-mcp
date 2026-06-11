@@ -6,6 +6,22 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 17 — tier vocabulary alignment
+
+**Breaking.** Guide tiers renamed:
+
+- `non-negotiable` → `iron-law` (heading `## IRON LAW`)
+- `strong` → `golden` (heading `## GOLDEN RULES`)
+- `rules` unchanged.
+
+`render_guide` raises a `ScaffoldError` with a migration hint when called
+with a legacy tier. `extract_tier_sections` keeps reading the legacy
+heading names (`## NON-NEGOTIABLE`, `## STRONG`) for one release so
+existing harnesses keep parsing; its return-value keys are now
+`iron-law` / `golden`. `_format_inlined_rules` and `render_agent_menu`
+also accept the legacy keys transitionally. `keystone://harness/options`
+exposes the new vocabulary.
+
 ### Phase 16 — namespace `keystone` across every primitive
 
 **Breaking.** Every MCP primitive now carries the `keystone` namespace.

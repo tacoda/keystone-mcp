@@ -43,7 +43,14 @@ BOOTSTRAP_DIRS = (
 
 SENSOR_MODES = ("computational", "inferential")
 
-GUIDE_TIERS = ("non-negotiable", "strong", "rules")
+GUIDE_TIERS = ("iron-law", "golden", "rules")
+# Legacy tier names accepted only as inputs (with a deprecation warning) so
+# pre-Phase-17 callers don't break in lockstep. New writes always render
+# under the new headings.
+_LEGACY_GUIDE_TIERS = {
+    "non-negotiable": "iron-law",
+    "strong": "golden",
+}
 SENSOR_KINDS = (
     "lint",
     "type",
@@ -72,21 +79,21 @@ SUPPORTED_AGENTS = (
 
 
 _GUIDE_SECTIONS: dict[str, str] = {
-    # Strictness cascade: non-negotiable > strong > rules.
+    # Strictness cascade: iron-law > golden > rules.
     # Bullet-level MUST/SHOULD/MAY prefix still overrides the tier default.
-    "non-negotiable": (
-        "## NON-NEGOTIABLE\n\n"
+    "iron-law": (
+        "## IRON LAW\n\n"
         "**<NEVER OR ALWAYS STATEMENT IN ALL CAPS BOLD — this rule can never "
         "be violated>.**\n"
     ),
-    "strong": (
-        "## STRONG\n\n"
+    "golden": (
+        "## GOLDEN RULES\n\n"
         "- <hard rule; deviation requires explicit reasoning>.\n"
         "- <another hard rule>.\n"
     ),
     "rules": (
         "## RULES\n\n"
-        "- <regular rule; strong rules and non-negotiables can override>.\n"
+        "- <regular rule; golden rules and iron laws can override>.\n"
         "- <another regular rule>.\n"
     ),
 }
@@ -98,6 +105,13 @@ def _titleize(slug: str) -> str:
 
 
 def render_guide(name: str, tier: str) -> str:
+    if tier in _LEGACY_GUIDE_TIERS:
+        legacy = tier
+        new = _LEGACY_GUIDE_TIERS[tier]
+        raise ScaffoldError(
+            f"guide tier {legacy!r} was renamed to {new!r} in Phase 17 "
+            f"(iron-law / golden / rules). Re-run with tier={new!r}."
+        )
     if tier not in _GUIDE_SECTIONS:
         raise ScaffoldError(
             f"guide tier must be one of {list(_GUIDE_SECTIONS)}, got {tier!r}"
@@ -251,10 +265,10 @@ _MENU_TEMPLATE = (
     "version-controlled and shared with the team. **Never put secrets\n"
     "there** — reference env vars via `env:VAR` in `.keystone/context.yaml`.\n\n"
     "**Strictness cascade** for rules in `{harness_root}/guides/`:\n"
-    "  1. **Non-negotiable** — can never be violated.\n"
-    "  2. **Strong** — preferred path; deviation requires explicit reasoning.\n"
-    "  3. **Rules** — regular rules; strong rules can override.\n\n"
-    "Non-negotiable and strong rules are inlined below at write time so the\n"
+    "  1. **Iron law** — can never be violated.\n"
+    "  2. **Golden rule** — preferred path; deviation requires explicit reasoning.\n"
+    "  3. **Rules** — regular rules; golden rules and iron laws can override.\n\n"
+    "Iron laws and golden rules are inlined below at write time so the\n"
     "agent sees them at session start. Regular rules and reasoning load on\n"
     "demand via MCP. Re-run `keystone_target_add(agent, force=True)` after\n"
     "editing guides to refresh this file.\n\n"
@@ -270,11 +284,14 @@ _MENU_TEMPLATE = (
 )
 
 
-# Cascade-section heading names recognized by the menu extractor. Both the
-# new names and the legacy keystone names are accepted, mirroring the
-# harness adapter.
-_NON_NEGOTIABLE_HEADINGS = {"non-negotiable", "non negotiable", "iron law", "iron laws"}
-_STRONG_HEADINGS = {"strong", "golden rule", "golden rules"}
+# Cascade-section heading names recognized by the menu extractor. Both
+# the new (Phase 17) names and the pre-rename legacy names are accepted
+# for one transitional release, mirroring the harness adapter.
+_IRON_LAW_HEADINGS = {"iron law", "iron laws", "non-negotiable", "non negotiable"}
+_GOLDEN_HEADINGS = {"golden rule", "golden rules", "strong"}
+# Back-compat aliases for any external code that imported these by name.
+_NON_NEGOTIABLE_HEADINGS = _IRON_LAW_HEADINGS
+_STRONG_HEADINGS = _GOLDEN_HEADINGS
 
 _H2_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
@@ -295,17 +312,22 @@ def extract_tier_sections(
 ) -> dict[str, list[tuple[str, str]]]:
     """Walk `<harness_root>/guides/**/*.md` and extract tiered sections.
 
-    Returns `{"non-negotiable": [(rel_path, body), ...], "strong": [...]}`.
-    Used by `target_add` to inline non-negotiable + strong rules into the
+    Returns `{"iron-law": [(rel_path, body), ...], "golden": [...]}`.
+    Used by `target_add` to inline iron-law + golden rules into the
     project-root menu file so the agent has them at session start without
     an MCP call.
+
+    Transitional behavior (Phase 17): both new (`## IRON LAW(S)` /
+    `## GOLDEN RULES`) and legacy (`## NON-NEGOTIABLE` / `## STRONG`)
+    headings are recognized for one release so projects can migrate at
+    their own pace.
 
     `README.md` files are skipped.
     """
     root = Path(harness_root).expanduser().resolve()
     out: dict[str, list[tuple[str, str]]] = {
-        "non-negotiable": [],
-        "strong": [],
+        "iron-law": [],
+        "golden": [],
     }
     guides_dir = root / "guides"
     if not guides_dir.is_dir():
@@ -320,29 +342,36 @@ def extract_tier_sections(
         rel = str(path.relative_to(root))
         for heading, body in _split_h2(text):
             lower = heading.lower().strip(":.")
-            if lower in _NON_NEGOTIABLE_HEADINGS and body.strip():
-                out["non-negotiable"].append((rel, body.strip()))
-            elif lower in _STRONG_HEADINGS and body.strip():
-                out["strong"].append((rel, body.strip()))
+            if lower in _IRON_LAW_HEADINGS and body.strip():
+                out["iron-law"].append((rel, body.strip()))
+            elif lower in _GOLDEN_HEADINGS and body.strip():
+                out["golden"].append((rel, body.strip()))
     return out
 
 
 def _format_inlined_rules(
     sections: dict[str, list[tuple[str, str]]],
 ) -> str:
+    """Render inlined iron-law and golden-rule sections for the menu file.
+
+    Accepts both the Phase-17 keys (`iron-law` / `golden`) and the legacy
+    keys (`non-negotiable` / `strong`) so transitional callers don't break.
+    """
+    iron_law = sections.get("iron-law") or sections.get("non-negotiable") or []
+    golden = sections.get("golden") or sections.get("strong") or []
     parts: list[str] = []
-    if sections.get("non-negotiable"):
-        parts.append("\n## Non-negotiable rules\n\n")
+    if iron_law:
+        parts.append("\n## Iron laws\n\n")
         parts.append("These rules can never be violated. No mode loosens them.\n\n")
-        for source, body in sections["non-negotiable"]:
+        for source, body in iron_law:
             parts.append(f"### From `{source}`\n\n{body}\n\n")
-    if sections.get("strong"):
-        parts.append("\n## Strong rules\n\n")
+    if golden:
+        parts.append("\n## Golden rules\n\n")
         parts.append(
             "Preferred-path rules. Deviation is allowed only with explicit\n"
             "reasoning surfaced to the user.\n\n"
         )
-        for source, body in sections["strong"]:
+        for source, body in golden:
             parts.append(f"### From `{source}`\n\n{body}\n\n")
     return "".join(parts)
 
