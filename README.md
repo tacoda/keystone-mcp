@@ -136,7 +136,8 @@ release playbook (plus commented-out examples of every external adapter).
 | `keystone_new_playbook(name)` | scaffold `playbooks/<name>.md` |
 | `keystone_new_corpus(name)` | scaffold `corpus/<name>.md` |
 | `keystone_new_adapter(agent)` | scaffold a per-agent adapter dir |
-| `keystone_target_add(agent, project_root?)` | install agent menu file at project root |
+| `keystone_target_add(agent, project_root?)` | install or refresh agent menu file at project root (overlay; preserves user content) |
+| `keystone_apply_patches()` | apply pending shipped patches; skips user-modified files |
 
 ### Prompts
 
@@ -167,6 +168,7 @@ tools refuse to write files whose names look like secrets (`secret`, `token`,
 | `keystone://harness/options` | valid scaffold-tool arguments |
 | `keystone://harness/verify` | cascade report (resolved / unreachable / canonical_violations / required_gaps / conflicts) |
 | `keystone://harness/doctor` | verify + path conformance + ambient-load budget proxy |
+| `keystone://harness/patch/pending` | pending shipped patches and detected conflicts |
 
 ### Envelope shape
 

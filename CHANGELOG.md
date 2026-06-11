@@ -6,6 +6,28 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 21 — source installer skill + patch system skeleton
+
+**New.** Lifecycle flows for installing external sources and updating
+shipped content.
+
+- Ships `templates/harness/skills/keystone-source-installer/SKILL.md`
+  — the agent walks the user through declaring a new external source
+  (type, identifier, auth via `env:VAR`, classify selectors,
+  canonical/required).
+- Ships `templates/harness/playbooks/install.md` and
+  `templates/harness/playbooks/patch.md`.
+- New module `keystone_mcp/patches.py` — forward-only applier reading
+  `templates/patches/<version>/`. The tree is empty in 0.2.0; future
+  releases populate it.
+- New MCP tool: `keystone_apply_patches()` — atomic; skips files the
+  user has modified since the previous shipped version.
+- New MCP resource: `keystone://harness/patch/pending` — read-only
+  summary of pending patches and detected conflicts.
+
+A `repo` source type that fetches into
+`~/.cache/keystone-mcp/repos/<sha>/` lands in Phase 23.
+
 ### Phase 20 — cascade engine + canonical / required semantics
 
 **New.** Cross-layer resolution for harness items.

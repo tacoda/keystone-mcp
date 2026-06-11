@@ -8,6 +8,7 @@ from fastmcp.server.providers.skills import SkillsDirectoryProvider
 from .config import load_config
 from .errors import KeystoneError
 from .harness_scaffold import Scaffold, options_catalog
+from .patches import apply_patches, pending_patches
 from .verify import run_doctor, run_verify
 from .prompts import (
     render_audit,
@@ -137,6 +138,16 @@ def build_server() -> FastMCP:
         """Full audit report — cascade verify + path conformance +
         ambient-load budget proxy. Read-only."""
         return json.dumps(run_doctor(HARNESS_ROOT, config), indent=2)
+
+    @mcp.resource(
+        "keystone://harness/patch/pending", annotations=_READ_ONLY
+    )
+    async def harness_patch_pending_resource() -> str:
+        """Pending shipped patches against the current harness (Phase
+        21). Lists files that would be written if the consumer ran the
+        patch playbook, plus files skipped because the consumer has
+        modified them since the previous shipped version."""
+        return json.dumps(pending_patches(HARNESS_ROOT), indent=2)
 
     # Harness scaffold tools (write operations) --------------------------
     #
@@ -294,10 +305,25 @@ def build_server() -> FastMCP:
         Menu files (CLAUDE.md, AGENTS.md, etc.) point the agent at
         `.keystone/harness/` and at this MCP server. They are thin pointers,
         not content — the single source of truth lives in the harness.
+        Phase 19 overlay semantics: only the region between
+        `<!-- BEGIN KEYSTONE -->` and `<!-- END KEYSTONE -->` is
+        rewritten; pre-existing user content is preserved.
         """
         return Scaffold(HARNESS_ROOT).target_add(
             agent, project_root=project_root, force=force
         )
+
+    @mcp.tool
+    async def keystone_apply_patches() -> dict:
+        """Apply every pending shipped patch to the project harness.
+
+        Patches are forward-only. Files modified by the user since the
+        previous shipped version are skipped and reported as
+        conflicts; the user resolves them by hand. Today no patches
+        ship — the call reports an empty `applied` list. Future
+        releases populate `templates/patches/<version>/`.
+        """
+        return apply_patches(HARNESS_ROOT)
 
     # Lifecycle prompts (Phase 14b) --------------------------------------
 
