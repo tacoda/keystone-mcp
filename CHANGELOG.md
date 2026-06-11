@@ -6,6 +6,18 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 27.1 — tiktoken-backed budget tokenizer (extras install)
+
+- New `tokens` extras install:
+  `pip install keystone-mcp[tokens]` pulls in `tiktoken>=0.7.0`.
+- `keystone_mcp/budget.py` selects the tokenizer at runtime:
+  prefers `tiktoken-cl100k-base` when available, falls back to the
+  deterministic word-count proxy otherwise. The report's
+  `tokenizer` field surfaces which backend ran.
+- Per-port + hot-files entries gain a `tokens` field (alongside the
+  preserved `approx_tokens` alias). Hot files now sort by token
+  count, which is the metric the budget actually reports on.
+
 ### Phase 28 — sensor runner skill + doctor sensor health
 
 - The `keystone-sensor-runner` skill (shipped in Phase 24) is the

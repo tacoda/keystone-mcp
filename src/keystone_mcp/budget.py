@@ -1,66 +1,95 @@
 """Phase 27 — ambient-load budget for the project harness.
 
 Counts the cost of loading the harness into an agent's ambient context
-window. Today the counter is a deterministic word-count proxy with no
-external dependency. A tokenizer-backed counter (e.g. `tiktoken`)
-lands behind an extras install in a future release; the proxy is
-stable enough for most "is this getting too big?" questions.
+window.
+
+Two tokenizer backends:
+
+  * **`tiktoken`** (preferred). Available when the user installs
+    `pip install keystone-mcp[tokens]`. Uses the `cl100k_base` BPE
+    encoding shared by GPT-4 and Claude's tokenizer family — the
+    counts are exact for that encoding and a close proxy for other
+    modern frontier-model tokenizers.
+  * **word-count proxy** (default). No external dependency; counts
+    whitespace-separated tokens and multiplies by ~1.33 (the
+    empirical inverse of 0.75 words/token).
+
+The report's `tokenizer` field reports which backend ran so consumers
+can decide how strictly to trust the number.
 
 Output shape:
 
     {
       "harness_root": "/abs/path",
-      "tokenizer": "word_count",          # or "tiktoken-cl100k-base" later
+      "tokenizer": "tiktoken-cl100k-base",  # or "word_count"
       "totals": {
         "files": 42,
         "words": 12345,
-        "approx_tokens": 16460,           # words * 4/3 heuristic
+        "tokens": 16460,
+        "approx_tokens": 16460,  # alias preserved for back-compat
       },
       "per_port": {
-        "guides":     {"files": 3, "words": 800,  "approx_tokens": 1066},
-        "sensors":    {"files": 10, "words": 1200, "approx_tokens": 1600},
+        "guides":     {"files": 3, "words": 800,  "tokens": 1066, "approx_tokens": 1066},
         ...
       },
-      "hot_files": [                       # top 10 largest by words
-        {"port": "playbooks", "name": "task.md", "words": 410, ...},
+      "hot_files": [                       # top 10 largest by tokens
+        {"port": "playbooks", "name": "task.md", "words": 410, "tokens": 547, ...},
         ...
       ],
       "cascade_excluded": {                # files shadowed by canonical locks
         "files": 0,
         "words": 0,
+        "tokens": 0,
       }
     }
 
 Cascade-excluded counts answer: "how much would I save if I deleted
 the project files an upstream canonical lock has already shadowed?"
-The agent never loads them; today they still cost git+disk space.
+The agent never loads them; they still cost git+disk space.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .cascade import CascadeReport
 from .harness_scaffold import BOOTSTRAP_DIRS
 
 
 # Empirical multiplier for word-count → token-count for English markdown.
-# OpenAI BPE tokenizers average ~0.75 words / token; we round up.
+# Modern BPE tokenizers average ~0.75 words / token; we round up.
 _WORDS_PER_TOKEN = 0.75
 
 
-def _approx_tokens(words: int) -> int:
-    return int(words / _WORDS_PER_TOKEN)
+def _word_count_tokens(text: str) -> int:
+    return int(len(text.split()) / _WORDS_PER_TOKEN)
 
 
-def _count(path: Path) -> tuple[int, int]:
-    """Return `(file_count, word_count)` for one file."""
+def _select_tokenizer() -> tuple[str, Callable[[str], int]]:
+    """Return `(name, encode_fn)` for the active tokenizer.
+
+    Prefer `tiktoken` if installed; otherwise fall back to the
+    word-count proxy. The encode function returns the integer token
+    count for a single string.
+    """
+    try:
+        import tiktoken  # type: ignore
+    except ImportError:
+        return "word_count", _word_count_tokens
+    enc = tiktoken.get_encoding("cl100k_base")
+    return "tiktoken-cl100k-base", lambda text: len(enc.encode(text))
+
+
+def _count(
+    path: Path, encode: Callable[[str], int]
+) -> tuple[int, int, int]:
+    """Return `(file_count, word_count, token_count)` for one file."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
-        return 0, 0
-    return 1, len(text.split())
+        return 0, 0, 0
+    return 1, len(text.split()), encode(text)
 
 
 def budget_report(
@@ -76,10 +105,12 @@ def budget_report(
     loads.
     """
     root = Path(harness_root).expanduser().resolve()
+    tokenizer_name, encode = _select_tokenizer()
     per_port: dict[str, dict[str, int]] = {}
     all_files: list[dict[str, Any]] = []
     total_files = 0
     total_words = 0
+    total_tokens = 0
 
     for sub in BOOTSTRAP_DIRS:
         port_dir = root / sub
@@ -87,52 +118,64 @@ def budget_report(
             continue
         files = 0
         words = 0
+        tokens = 0
         for path in port_dir.rglob("*"):
             if not path.is_file():
                 continue
-            f, w = _count(path)
+            f, w, t = _count(path, encode)
             files += f
             words += w
+            tokens += t
             if f:
                 all_files.append(
                     {
                         "port": sub,
                         "name": path.relative_to(port_dir).as_posix(),
                         "words": w,
-                        "approx_tokens": _approx_tokens(w),
+                        "tokens": t,
+                        # `approx_tokens` preserved as an alias for
+                        # consumers that pinned to the Phase-27 shape.
+                        "approx_tokens": t,
                     }
                 )
         per_port[sub] = {
             "files": files,
             "words": words,
-            "approx_tokens": _approx_tokens(words),
+            "tokens": tokens,
+            "approx_tokens": tokens,
         }
         total_files += files
         total_words += words
+        total_tokens += tokens
 
     hot_files = sorted(
-        all_files, key=lambda d: d["words"], reverse=True
+        all_files, key=lambda d: d["tokens"], reverse=True
     )[:top_n]
 
-    cascade_excluded = {"files": 0, "words": 0, "approx_tokens": 0}
+    cascade_excluded = {
+        "files": 0,
+        "words": 0,
+        "tokens": 0,
+        "approx_tokens": 0,
+    }
     if cascade and cascade.unreachable:
         for skip in cascade.unreachable:
             p = Path(skip.project_layer_path) if skip.project_layer_path else None
             if p and p.exists():
-                f, w = _count(p)
+                f, w, t = _count(p, encode)
                 cascade_excluded["files"] += f
                 cascade_excluded["words"] += w
-        cascade_excluded["approx_tokens"] = _approx_tokens(
-            cascade_excluded["words"]
-        )
+                cascade_excluded["tokens"] += t
+        cascade_excluded["approx_tokens"] = cascade_excluded["tokens"]
 
     return {
         "harness_root": str(root),
-        "tokenizer": "word_count",
+        "tokenizer": tokenizer_name,
         "totals": {
             "files": total_files,
             "words": total_words,
-            "approx_tokens": _approx_tokens(total_words),
+            "tokens": total_tokens,
+            "approx_tokens": total_tokens,
         },
         "per_port": per_port,
         "hot_files": hot_files,

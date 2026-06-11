@@ -36,6 +36,12 @@ dependencies = [
     "pyyaml>=6.0.2",
 ]
 
+[project.optional-dependencies]
+# `keystone-mcp[tokens]` enables a real BPE tokenizer for
+# `keystone://harness/budget`. Without this extra, the budget report
+# falls back to a deterministic word-count proxy (~0.75 words/token).
+tokens = ["tiktoken>=0.7.0"]
+
 [project.scripts]
 keystone-mcp = "keystone_mcp.server:main"
 

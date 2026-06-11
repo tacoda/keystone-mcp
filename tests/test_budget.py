@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from keystone_mcp.budget import budget_report
 from keystone_mcp.cascade import Item, PROJECT_LAYER, resolve
 from keystone_mcp.harness_scaffold import Scaffold
@@ -26,17 +28,30 @@ def test_budget_report_totals_match_per_port_sum(tmp_path):
 def test_budget_report_hot_files_sorted_desc(tmp_path):
     s = _harness(tmp_path)
     report = budget_report(s.root, top_n=5)
-    counts = [f["words"] for f in report["hot_files"]]
-    assert counts == sorted(counts, reverse=True)
-    assert len(counts) <= 5
+    # Hot files are sorted by tokens (the metric the budget reports
+    # on), not by word count. Word count tracks tokens but isn't
+    # monotonically equal.
+    token_counts = [f["tokens"] for f in report["hot_files"]]
+    assert token_counts == sorted(token_counts, reverse=True)
+    assert len(token_counts) <= 5
 
 
-def test_budget_report_approx_tokens_uses_consistent_multiplier(tmp_path):
+def test_budget_report_tokens_consistent_with_active_tokenizer(tmp_path):
     s = _harness(tmp_path)
     report = budget_report(s.root)
     for port in report["per_port"].values():
-        # 0.75 words/token → tokens = words / 0.75
-        assert port["approx_tokens"] == int(port["words"] / 0.75)
+        if port["words"] == 0:
+            assert port["tokens"] == 0
+            continue
+        ratio = port["tokens"] / port["words"]
+        # Word-count proxy: 0.75 words/token → tokens ≈ words * 1.33.
+        # tiktoken-cl100k-base on English markdown: similar order of
+        # magnitude. Either way the ratio sits comfortably in this
+        # band.
+        assert 0.5 < ratio < 3.0, ratio
+    # `approx_tokens` is preserved as an alias for `tokens`.
+    for port in report["per_port"].values():
+        assert port["approx_tokens"] == port["tokens"]
 
 
 def test_budget_report_cascade_excluded_counts_unreachable(tmp_path):
@@ -70,6 +85,31 @@ def test_budget_report_cascade_excluded_counts_unreachable(tmp_path):
     report = budget_report(s.root, cascade=cascade)
     assert report["cascade_excluded"]["files"] == 1
     assert report["cascade_excluded"]["words"] > 0
+
+
+def test_budget_report_reports_active_tokenizer(tmp_path):
+    s = _harness(tmp_path)
+    report = budget_report(s.root)
+    assert report["tokenizer"] in {"word_count", "tiktoken-cl100k-base"}
+
+
+def test_budget_report_uses_tiktoken_when_available(tmp_path):
+    pytest.importorskip("tiktoken")
+    s = _harness(tmp_path)
+    report = budget_report(s.root)
+    assert report["tokenizer"] == "tiktoken-cl100k-base"
+    # tiktoken counts must populate the new `tokens` field.
+    assert report["totals"]["tokens"] > 0
+
+
+def test_budget_report_falls_back_to_word_count(monkeypatch, tmp_path):
+    # Simulate `tiktoken` not being installed by stubbing the import.
+    import sys
+
+    monkeypatch.setitem(sys.modules, "tiktoken", None)
+    s = _harness(tmp_path)
+    report = budget_report(s.root)
+    assert report["tokenizer"] == "word_count"
 
 
 def test_budget_report_serializable_to_json(tmp_path):

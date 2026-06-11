@@ -68,9 +68,15 @@ Source types (`type:` in `.keystone/context.yaml`):
 Published to PyPI as [`keystone-mcp`](https://pypi.org/project/keystone-mcp/).
 
 ```bash
-uvx keystone-mcp           # one-shot run
-pipx install keystone-mcp  # install + add to PATH
+pip install keystone-mcp             # core
+pip install "keystone-mcp[tokens]"   # + tiktoken-backed budget tokenizer
+uvx keystone-mcp                     # one-shot run via uv
+pipx install keystone-mcp            # install + add to PATH
 ```
+
+Without the `tokens` extra, `keystone://harness/budget` falls back to
+a deterministic word-count proxy (~0.75 words / token). With the
+extra, the budget reports exact `cl100k_base` token counts.
 
 Or from source:
 
