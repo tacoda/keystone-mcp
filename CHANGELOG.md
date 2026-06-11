@@ -6,6 +6,20 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 28 — sensor runner skill + doctor sensor health
+
+- The `keystone-sensor-runner` skill (shipped in Phase 24) is the
+  cross-agent entry point for the verify phase.
+- `keystone://harness/doctor` now also reports `sensor_health`:
+  - `missing_implementation` — declared sensors without a matching
+    script or prompt.
+  - `ambiguous` — sensors with BOTH a script and a prompt (the runner
+    prefers the script; the user probably didn't intend the
+    ambiguity).
+  - `orphan_scripts` / `orphan_prompts` — implementation files
+    without a sensor declaration.
+- 4 new tests in `tests/test_verify.py` cover the cleanup paths.
+
 ### Phase 27 — token budget + observability
 
 - New module `keystone_mcp/budget.py`. Computes per-port file counts,

@@ -181,7 +181,8 @@ def _path_conformance(harness_root: Path) -> dict[str, Any]:
 def run_doctor(
     harness_root: str | Path, config: KeystoneConfig
 ) -> dict[str, Any]:
-    """Doctor report: verify + path conformance + ambient-load budget."""
+    """Doctor report: verify + path conformance + ambient-load budget
+    + sensor health."""
     from .budget import budget_report
 
     root = Path(harness_root).expanduser().resolve()
@@ -202,6 +203,60 @@ def run_doctor(
         "path_conformance": _path_conformance(root),
         "budget_proxy": _legacy_budget_proxy(root),
         "budget": budget_report(root, cascade=cascade),
+        "sensor_health": _sensor_health(root),
+    }
+
+
+def _sensor_health(harness_root: Path) -> dict[str, Any]:
+    """Static health check for sensors.
+
+    Each `sensors/<name>.md` must have exactly one matching
+    implementation: either `scripts/<name>.sh` (computational) or
+    `prompts/<name>.md` (inferential). The doctor surfaces:
+
+      * `missing_implementation` — sensor declared without a matching
+        script or prompt.
+      * `ambiguous` — both script and prompt present; the runner
+        prefers the script, but the user probably didn't intend the
+        ambiguity.
+      * `orphan_script` / `orphan_prompt` — implementation file without
+        a sensor declaration.
+    """
+    sensors_dir = harness_root / "sensors"
+    scripts_dir = harness_root / "scripts"
+    prompts_dir = harness_root / "prompts"
+    missing: list[str] = []
+    ambiguous: list[str] = []
+    orphan_scripts: list[str] = []
+    orphan_prompts: list[str] = []
+    sensor_names: set[str] = set()
+    if sensors_dir.is_dir():
+        for path in sorted(sensors_dir.glob("*.md")):
+            if path.name == "README.md":
+                continue
+            name = path.stem
+            sensor_names.add(name)
+            has_script = (scripts_dir / f"{name}.sh").is_file()
+            has_prompt = (prompts_dir / f"{name}.md").is_file()
+            if not has_script and not has_prompt:
+                missing.append(name)
+            elif has_script and has_prompt:
+                ambiguous.append(name)
+    if scripts_dir.is_dir():
+        for path in sorted(scripts_dir.glob("*.sh")):
+            if path.stem not in sensor_names:
+                orphan_scripts.append(path.stem)
+    if prompts_dir.is_dir():
+        for path in sorted(prompts_dir.glob("*.md")):
+            name = path.stem
+            if name not in sensor_names:
+                orphan_prompts.append(name)
+    return {
+        "missing_implementation": missing,
+        "ambiguous": ambiguous,
+        "orphan_scripts": orphan_scripts,
+        "orphan_prompts": orphan_prompts,
+        "ok": not (missing or ambiguous),
     }
 
 

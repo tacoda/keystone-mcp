@@ -107,6 +107,54 @@ def test_doctor_budget_proxy_reports_word_counts(tmp_path):
     assert budget["per_port"]["sensors"]["files"] > 0
 
 
+def test_doctor_sensor_health_clean_when_all_match(tmp_path):
+    s = _seed_harness(tmp_path)
+    payload = run_doctor(s.root, _config())
+    health = payload["sensor_health"]
+    # All shipped sensors have a matching implementation.
+    assert health["missing_implementation"] == []
+    assert health["ok"] is True
+
+
+def test_doctor_sensor_health_flags_missing_implementation(tmp_path):
+    s = _seed_harness(tmp_path)
+    # Drop a sensor declaration with no script and no prompt.
+    (s.root / "sensors" / "orphaned.md").write_text(
+        "---\nkind: custom\n---\n\n# orphaned\n"
+    )
+    payload = run_doctor(s.root, _config())
+    health = payload["sensor_health"]
+    assert "orphaned" in health["missing_implementation"]
+    assert health["ok"] is False
+
+
+def test_doctor_sensor_health_flags_ambiguous(tmp_path):
+    s = _seed_harness(tmp_path)
+    # Add both a script and a prompt for the same sensor name.
+    (s.root / "sensors" / "double.md").write_text(
+        "---\nkind: custom\n---\n\n# double\n"
+    )
+    (s.root / "scripts" / "double.sh").write_text("#!/bin/sh\nexit 0\n")
+    (s.root / "prompts" / "double.md").write_text("# double\n")
+    payload = run_doctor(s.root, _config())
+    health = payload["sensor_health"]
+    assert "double" in health["ambiguous"]
+    assert health["ok"] is False
+
+
+def test_doctor_sensor_health_flags_orphan_implementations(tmp_path):
+    s = _seed_harness(tmp_path)
+    # Script + prompt with no matching sensor declaration.
+    (s.root / "scripts" / "no-sensor.sh").write_text(
+        "#!/bin/sh\nexit 0\n"
+    )
+    (s.root / "prompts" / "stranded.md").write_text("# stranded\n")
+    payload = run_doctor(s.root, _config())
+    health = payload["sensor_health"]
+    assert "no-sensor" in health["orphan_scripts"]
+    assert "stranded" in health["orphan_prompts"]
+
+
 def test_verify_reports_serializable_to_json(tmp_path):
     import json
 
