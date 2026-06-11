@@ -530,6 +530,62 @@ def _write(path: Path, body: str, *, force: bool) -> tuple[bool, str]:
     return True, str(path)
 
 
+# Menu-overlay primitives (Phase 19) --------------------------------------
+
+# Delimited markers that bracket the manager-owned region of the menu
+# file. HTML comments render invisibly in every Markdown engine and
+# don't collide with frontmatter conventions. The manager owns only the
+# region between BEGIN_MARKER and END_MARKER; content above and below is
+# preserved verbatim across refreshes.
+MENU_BEGIN_MARKER = "<!-- BEGIN KEYSTONE -->"
+MENU_END_MARKER = "<!-- END KEYSTONE -->"
+
+_BLOCK_RE = re.compile(
+    rf"{re.escape(MENU_BEGIN_MARKER)}.*?{re.escape(MENU_END_MARKER)}",
+    re.DOTALL,
+)
+
+
+def _wrap_keystone_block(body: str) -> str:
+    """Wrap a Keystone-managed body in BEGIN/END markers."""
+    return f"{MENU_BEGIN_MARKER}\n{body.rstrip()}\n{MENU_END_MARKER}\n"
+
+
+def _menu_overlay(
+    path: Path, body: str, *, force: bool
+) -> tuple[bool, str]:
+    """Install or refresh the Keystone-managed block in a menu file.
+
+    Returns `(wrote_new, str(path))`. `wrote_new` is True if a file was
+    created from scratch; False if the file already existed (the
+    Keystone block was refreshed in place — the user's surrounding
+    content is preserved). Idempotent: re-running with an unchanged
+    `body` produces a byte-identical file.
+
+    `force` is honored only when the existing file has no Keystone
+    block AND no other content: writing the new block then matches
+    `_write` behavior. In every other branch the overlay refreshes
+    automatically.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    block = _wrap_keystone_block(body)
+    if not path.exists():
+        path.write_text(block, encoding="utf-8")
+        return True, str(path)
+    existing = path.read_text(encoding="utf-8")
+    if _BLOCK_RE.search(existing):
+        # Refresh the managed block in place.
+        refreshed = _BLOCK_RE.sub(block.rstrip("\n"), existing, count=1)
+        if not refreshed.endswith("\n"):
+            refreshed += "\n"
+        path.write_text(refreshed, encoding="utf-8")
+        return False, str(path)
+    # No markers anywhere — append the block after existing content.
+    sep = "" if existing.endswith("\n\n") else "\n" if existing.endswith("\n") else "\n\n"
+    path.write_text(existing + sep + block, encoding="utf-8")
+    return False, str(path)
+
+
 # Public scaffold API ------------------------------------------------------
 
 
@@ -796,15 +852,33 @@ class Scaffold:
         project_root: str | Path = ".",
         force: bool = False,
     ) -> dict[str, list[str]]:
-        """Install the agent menu file(s) at the project root.
+        """Install or refresh the agent menu file(s) at the project root.
 
-        Non-negotiable and strong rules from `<harness>/guides/` are
-        extracted and inlined at write time so the agent reads them at
-        session start without an MCP call. Re-run with `force=True` after
-        editing guides to refresh the menu.
+        Phase 19 overlay semantics: the menu file is the agent's
+        pre-existing file (CLAUDE.md, AGENTS.md, etc.). The manager owns
+        only the region between `<!-- BEGIN KEYSTONE -->` and
+        `<!-- END KEYSTONE -->`. All other content — anything above or
+        below those sentinels — is preserved verbatim, even on refresh.
 
-        `project_root` is the directory that holds (or will hold) the
-        agent activation files (e.g. CLAUDE.md). Defaults to "." (CWD).
+          * File does not exist → write a new file containing only the
+            Keystone block, wrapped in BEGIN/END markers.
+          * File exists with markers → replace the region between markers
+            with the freshly-rendered Keystone block. Content above and
+            below the markers is preserved byte-for-byte.
+          * File exists with NO markers → append the Keystone block
+            (markers + body) after the existing content with a blank
+            line of separation. The user's content stays at the top.
+
+        Iron-law and golden-rule sections from `<harness>/guides/` are
+        extracted and inlined inside the block so the agent reads them at
+        session start without an MCP call.
+
+        `force=True` re-runs the overlay even if the file already
+        contains an up-to-date Keystone block. In overlay mode, `force`
+        rarely matters — the block always refreshes — but it is
+        accepted for symmetry with other scaffold tools.
+
+        `project_root` defaults to "." (CWD).
         """
         files = menu_files_for(agent)
         proj = Path(project_root).expanduser().resolve()
@@ -813,8 +887,8 @@ class Scaffold:
         result = WriteResult([], [])
         for rel in files:
             path = proj / rel
-            created, p = _write(path, body, force=force)
-            (result.created if created else result.skipped).append(p)
+            wrote_new, p = _menu_overlay(path, body, force=force)
+            (result.created if wrote_new else result.skipped).append(p)
         return result.to_dict()
 
     # Audit ----------------------------------------------------------------

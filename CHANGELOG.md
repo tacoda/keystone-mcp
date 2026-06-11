@@ -6,6 +6,31 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 19 — bootstrap playbook + menu overlay
+
+**Behavioral.** The agent menu file (CLAUDE.md, AGENTS.md, etc.) now
+overlays on top of any pre-existing content instead of replacing the
+file.
+
+- `Scaffold.target_add` writes only the region between
+  `<!-- BEGIN KEYSTONE -->` and `<!-- END KEYSTONE -->`. Any user
+  content above or below those sentinels is preserved verbatim across
+  refreshes.
+- File doesn't exist → wrote a fresh file containing only the
+  Keystone block.
+- File exists with the markers → refresh the block in place.
+- File exists without markers → append the block after existing
+  content; user content stays at the top of the file.
+- Idempotent: re-running with unchanged inputs yields a byte-identical
+  file.
+- The `keystone_bootstrap` MCP prompt now points at the shipped
+  bootstrap playbook (`playbooks/bootstrap.md`) instead of inlining
+  the work, matching the new template-driven architecture.
+
+Breaking for any consumer that relied on `target_add` overwriting the
+entire menu file. Workaround: delete the file first, then call
+`keystone_target_add`.
+
 ### Phase 18 — shipped template library + `actions` / `playbooks` ports restored
 
 **Additive (mostly).** Templates move out of inline Python strings into a

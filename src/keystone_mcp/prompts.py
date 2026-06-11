@@ -27,63 +27,45 @@ def render_bootstrap() -> str:
     return """\
 # Bootstrap workflow
 
-You are bootstrapping the project harness at `.keystone/harness/`. Goal:
-analyze this codebase end-to-end and fill the project's state ledgers so
-future sessions have ground truth to work from.
+You are bootstrapping the project harness at `.keystone/harness/`. This
+prompt seeds the workflow; the actual step-by-step procedure lives in
+the shipped bootstrap playbook.
 
-## Phases
+## Walk the playbook
 
-1. **Scaffold (if needed).** Call `keystone_harness_bootstrap`. Idempotent
-   — safe if the skeleton already exists.
+1. Run `keystone_harness_bootstrap()` if `.keystone/harness/` does not
+   exist yet. The default materializes the shipped template tree
+   (state-ledger templates, default sensors, default actions, default
+   playbooks). Existing files are never overwritten.
+2. Read `.keystone/harness/playbooks/bootstrap.md` and follow it phase
+   by phase. The playbook covers:
+   - scaffold (the call above)
+   - read existing context (`keystone://harness/status`,
+     `keystone://context/list`, per-topic envelopes)
+   - codebase scan (languages, frameworks, build/test/lint commands,
+     architecture, hotspots)
+   - fill state ledgers (`corpus/state/CODEBASE_STATE.md`,
+     `code-debt.md`, `risk-fingerprints.md`, `quality-radar.md`,
+     `traffic-topology.md`)
+   - iron-law guides (use `keystone_new_guide(name, tier="iron-law")`)
+   - skills (use `keystone_new_skill(name, description=...)`)
+   - report and pause for user acceptance
 
-2. **Read existing context.** Read these resources:
-   - `keystone://harness/status` — what files already exist.
-   - `keystone://context/list` — which topics are configured.
-   - For each existing topic that is harness-backed, read
-     `keystone://context/{topic}` so you start from current state, not zero.
-
-3. **Codebase scan.** Walk the repository. Identify:
-   - Languages, frameworks, libraries (from manifests + entry points).
-   - Build / test / lint / type-check commands.
-   - Top-level architecture (services, packages, layers).
-   - Hotspots: largest files, most-edited files, files with TODOs.
-   - Risk fingerprint: areas with little test coverage / high churn /
-     external integrations.
-
-4. **Fill state ledgers.** Write findings into
-   `.keystone/harness/corpus/state/`:
-   - `CODEBASE_STATE.md` — language, frameworks, build/test commands,
-     architecture summary.
-   - `code-debt.md` — known debt categorized.
-   - `risk-fingerprints.md` — areas to handle carefully.
-   - `quality-radar.md` — coverage gaps, lint deltas, type-check holes.
-   - `traffic-topology.md` — entry points, dependencies, external calls.
-
-   Use plain markdown writes (Edit / Write tools) for these state files —
-   they are not template-shaped and `keystone_new_*` does not cover them.
-
-5. **Iron-law guides.** Identify deploy / security / data-handling
-   constraints that already exist (CI config, CODEOWNERS, deploy scripts,
-   inline comments, README sections). For each, call
-   `keystone_new_guide(name, tier="iron-law")` and fill in the body.
-
-6. **Skills.** If the codebase has well-defined operations (release,
-   rollback, migration steps), scaffold them with
-   `keystone_new_skill(name, description=...)`. Body = the procedure.
-
-7. **Report.** Summarize: ledgers written, guides created, skills
-   scaffolded. Pause for user acceptance before any further changes.
+3. Install the agent menu file with `keystone_target_add(agent)`. The
+   overlay preserves any existing user content above and below the
+   delimited Keystone block.
 
 ## Iron laws for bootstrap
 
-- **No silent overwrites.** Propose every state-file diff before applying
-  it. Use `force=True` on scaffold tools only after explicit user
-  acceptance.
-- **No invented facts.** If you can't verify a claim from the codebase,
-  mark it as `<unknown>` in the state file rather than guessing.
+- **No silent overwrites.** Propose every state-file diff before
+  applying it. Use `force=True` on scaffold tools only after explicit
+  user acceptance.
+- **No invented facts.** If you can't verify a claim from the
+  codebase, mark it as `<unknown>` in the state file rather than
+  guessing.
 - **No secrets.** Never write secrets, tokens, credentials, or
-  environment-variable values into `.keystone/`. Reference via `env:VAR` in
-  `.keystone/context.yaml` instead.
+  environment-variable values into `.keystone/`. Reference via
+  `env:VAR` in `.keystone/context.yaml` instead.
 """
 
 

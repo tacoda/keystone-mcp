@@ -626,16 +626,85 @@ def test_target_add_unknown_agent_raises(tmp_path):
         s.target_add("gpt-9000", project_root=tmp_path)
 
 
-def test_target_add_refuses_overwrite(tmp_path):
+# Phase 19 — menu overlay semantics ----------------------------------------
+
+
+def test_target_add_appends_block_to_existing_unmarked_menu(tmp_path):
     s = _scaffold(tmp_path)
     s.bootstrap()
     project = tmp_path / "proj"
     project.mkdir()
-    (project / "CLAUDE.md").write_text("existing content")
+    pre_existing = "# my own CLAUDE.md\n\nuser content above.\n"
+    (project / "CLAUDE.md").write_text(pre_existing)
     result = s.target_add("claude-code", project_root=project)
+    # File existed → no new file created; the block was overlaid.
     assert result["created"] == []
     assert len(result["skipped"]) == 1
-    assert (project / "CLAUDE.md").read_text() == "existing content"
+    body = (project / "CLAUDE.md").read_text()
+    # User content preserved verbatim, above the block.
+    assert body.startswith(pre_existing.rstrip("\n"))
+    # Block markers present.
+    assert "<!-- BEGIN KEYSTONE -->" in body
+    assert "<!-- END KEYSTONE -->" in body
+    # Keystone content lands inside the block.
+    assert "Never put secrets" in body
+
+
+def test_target_add_refresh_preserves_content_around_block(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    project = tmp_path / "proj"
+    project.mkdir()
+    # File with explicit user content above AND below the Keystone block.
+    seeded = (
+        "# CLAUDE.md\n\n"
+        "## Project notes\n\n"
+        "User-written notes the agent should keep seeing.\n\n"
+        "<!-- BEGIN KEYSTONE -->\n"
+        "stale block — gets refreshed.\n"
+        "<!-- END KEYSTONE -->\n\n"
+        "## After the block\n\n"
+        "Footer the user owns.\n"
+    )
+    (project / "CLAUDE.md").write_text(seeded)
+    s.target_add("claude-code", project_root=project)
+    body = (project / "CLAUDE.md").read_text()
+    # Pre-block user content preserved.
+    assert "## Project notes" in body
+    assert "User-written notes the agent should keep seeing." in body
+    # Post-block user content preserved.
+    assert "## After the block" in body
+    assert "Footer the user owns." in body
+    # Stale Keystone content was replaced; fresh block content lands.
+    assert "stale block" not in body
+    assert "Never put secrets" in body
+    # Markers still surround the block.
+    assert body.count("<!-- BEGIN KEYSTONE -->") == 1
+    assert body.count("<!-- END KEYSTONE -->") == 1
+
+
+def test_target_add_new_file_writes_only_the_block(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    project = tmp_path / "proj"
+    project.mkdir()
+    result = s.target_add("claude-code", project_root=project)
+    assert len(result["created"]) == 1
+    body = (project / "CLAUDE.md").read_text()
+    assert body.startswith("<!-- BEGIN KEYSTONE -->\n")
+    assert body.rstrip("\n").endswith("<!-- END KEYSTONE -->")
+
+
+def test_target_add_overlay_is_idempotent(tmp_path):
+    s = _scaffold(tmp_path)
+    s.bootstrap()
+    project = tmp_path / "proj"
+    project.mkdir()
+    s.target_add("claude-code", project_root=project)
+    first = (project / "CLAUDE.md").read_text()
+    s.target_add("claude-code", project_root=project)
+    second = (project / "CLAUDE.md").read_text()
+    assert first == second
 
 
 def test_status_reports_subdir_counts(tmp_path):
