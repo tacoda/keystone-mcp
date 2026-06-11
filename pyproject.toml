@@ -1,7 +1,7 @@
 [project]
 name = "keystone-mcp"
 version = "0.1.0"
-description = "Context broker MCP server — retrieves rules, reasoning, skills, and commands from company resources (markdown, GitHub, Confluence, Notion, Jira, Linear, Slack) via repo-owned topic configuration."
+description = "Keystone Harness Manager — the end-to-end harness manager for any project. MCP server that owns the full lifecycle: scaffold, sensors, actions, playbooks, skills, cascade verify, and forward-only shipped-template patches."
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [

@@ -1,10 +1,24 @@
-# keystone-mcp
+# keystone-mcp — Keystone Harness Manager
 
-An MCP server that retrieves contextual information from company resources and
-surfaces it to coding agents as **rules**, **reasoning**, **skills**, and
-**commands**.
+The **Keystone Harness Manager** is the end-to-end harness manager for any
+project. It's a single MCP server (`keystone-mcp` on PyPI) that owns the
+full lifecycle of a project harness:
 
-The agent treats each kind differently:
+- scaffold + materialize a shipped template tree under
+  `.keystone/harness/`
+- broker rules, reasoning, skills, and commands from any external source
+  (markdown, folder, repo, GitHub, Confluence, Notion, Jira, Linear,
+  Slack)
+- run computational and inferential sensors as blocking checks
+- resolve a cascade across external sources and the project layer
+  (canonical locks, required gaps, conflicts, unreachable items)
+- apply forward-only shipped-template patches as the manager evolves
+- drive Learning + Pruning flywheels via shipped playbooks and skills
+- overlay the agent menu file (CLAUDE.md, AGENTS.md, …) without
+  clobbering any pre-existing user content
+
+The agent treats each retrieved payload differently:
+
 - **rules** — constraints to obey (`must` / `should` / `may`)
 - **reasoning** — background facts and intent
 - **skills** — procedural how-to knowledge (multi-step playbooks)
@@ -16,13 +30,9 @@ broker fans the request out to the right backing source.
 
 ## Status
 
-Phases 1–12 shipped. Seven external adapters plus a harness adapter, shared
-classifier, multi-source merge with conflict resolution, persistent sqlite
-cache, FastMCP-conforming surface (resources for read-only data, tools for
-parameterized reads and writes), and a harness scaffold tool surface. 217
-tests pass.
-
-See [`PLAN.md`](./PLAN.md) for the full design and remaining open work.
+Pre-1.0; the package name on PyPI stays `keystone-mcp`. Phases 1–24
+shipped per [`FEATURE_PARITY_PLAN.md`](./FEATURE_PARITY_PLAN.md) and
+[`CHANGELOG.md`](./CHANGELOG.md). Tests pass.
 
 ## Adapters
 

@@ -6,6 +6,17 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 25 — re-brand to "Keystone Harness Manager"
+
+User-facing branding shifts. The package name on PyPI stays
+`keystone-mcp`; the optional rename to `keystone-harness` is deferred.
+
+- `pyproject.toml` description updated.
+- `README.md` top reframes the project as the Keystone Harness
+  Manager: an end-to-end harness manager for any project.
+- `INSTRUCTIONS` block on the server already carried the new
+  framing (since Phase 16).
+
 ### Phase 24 — inferential sensors first-class
 
 - `keystone://harness/options` now lists `sensor_modes`
