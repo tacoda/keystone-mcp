@@ -165,6 +165,8 @@ tools refuse to write files whose names look like secrets (`secret`, `token`,
 | `keystone://source/{name}/health` | adapter reachability + auth state |
 | `keystone://harness/status` | harness layout audit (root=harness) |
 | `keystone://harness/options` | valid scaffold-tool arguments |
+| `keystone://harness/verify` | cascade report (resolved / unreachable / canonical_violations / required_gaps / conflicts) |
+| `keystone://harness/doctor` | verify + path conformance + ambient-load budget proxy |
 
 ### Envelope shape
 

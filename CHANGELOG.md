@@ -6,6 +6,43 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 20 — cascade engine + canonical / required semantics
+
+**New.** Cross-layer resolution for harness items.
+
+- New module `keystone_mcp/cascade.py` — pure resolver that takes an
+  ordered list of layers and produces a `CascadeReport` with
+  `resolved`, `unreachable`, `canonical_violations`, `required_gaps`,
+  and `conflicts` buckets. Specific beats broad; canonical declarations
+  lock an item at the layer that declared it; required declarations
+  surface gaps when no deeper layer supplies the body.
+- `SourceConfig` gains `canonical` and `required` per-port dicts.
+  `.keystone/context.yaml` parses new top-level keys per source:
+  ```yaml
+  sources:
+    org-standards:
+      type: repo
+      canonical:
+        guides: ["documentation", "todos"]
+      required:
+        actions: ["release-notes"]
+  ```
+- New module `keystone_mcp/verify.py` — builds cascade inputs from the
+  configured sources plus a walk of the on-disk project layer, and
+  produces the verify/doctor payloads.
+- New MCP resources:
+  - `keystone://harness/verify` — cascade report (read-only).
+  - `keystone://harness/doctor` — cascade report + path conformance +
+    ambient-load word-count proxy (read-only).
+- Shipped `templates/harness/playbooks/doctor.md`.
+- Tests: `tests/test_cascade.py` (engine), `tests/test_verify.py`
+  (wiring), plus new cases in `tests/test_config.py` for
+  canonical/required parsing.
+
+A full repo-source manifest (`keystone-source.yaml` shipping its own
+canonical/required) lands later; today the declarations live entirely
+in `context.yaml`.
+
 ### Phase 19 — bootstrap playbook + menu overlay
 
 **Behavioral.** The agent menu file (CLAUDE.md, AGENTS.md, etc.) now

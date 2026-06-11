@@ -204,6 +204,81 @@ cache:
         )
 
 
+def test_canonical_and_required_per_source(tmp_path):
+    cfg = load_config(
+        _write(
+            tmp_path,
+            """
+sources:
+  org-standards:
+    type: markdown
+    root: /tmp/x
+    canonical:
+      guides: ["documentation", "todos"]
+      actions: ["changelog-check"]
+    required:
+      actions: ["release-notes"]
+topics:
+  rollback:
+    description: rollback policy
+    source: org-standards
+    query: { file: rollback.md }
+""",
+        )
+    )
+    src = cfg.sources["org-standards"]
+    assert src.canonical == {
+        "guides": ("documentation", "todos"),
+        "actions": ("changelog-check",),
+    }
+    assert src.required == {"actions": ("release-notes",)}
+    # canonical / required entries are stripped from settings (not
+    # leaked into the adapter).
+    assert "canonical" not in src.settings
+    assert "required" not in src.settings
+
+
+def test_canonical_block_rejects_non_mapping(tmp_path):
+    with pytest.raises(ConfigError, match="canonical"):
+        load_config(
+            _write(
+                tmp_path,
+                """
+sources:
+  bad:
+    type: markdown
+    root: /tmp/x
+    canonical: ["not-a-mapping"]
+topics:
+  rollback:
+    source: bad
+    query: { file: rollback.md }
+""",
+            )
+        )
+
+
+def test_required_block_rejects_non_list(tmp_path):
+    with pytest.raises(ConfigError, match="required"):
+        load_config(
+            _write(
+                tmp_path,
+                """
+sources:
+  bad:
+    type: markdown
+    root: /tmp/x
+    required:
+      actions: "not-a-list"
+topics:
+  rollback:
+    source: bad
+    query: { file: rollback.md }
+""",
+            )
+        )
+
+
 def test_cache_rejects_unknown_backend(tmp_path):
     with pytest.raises(ConfigError, match="must be memory"):
         load_config(

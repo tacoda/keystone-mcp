@@ -13,6 +13,13 @@ class SourceConfig:
     name: str
     type: str
     settings: dict[str, Any]
+    # Phase 20 cascade-engine declarations. `canonical[port]` is a tuple
+    # of item names locked at this layer — no deeper layer may override.
+    # `required[port]` is a tuple of item names this source references
+    # but does not ship; the project (or a deeper source) must supply the
+    # body, otherwise the cascade engine surfaces a gap.
+    canonical: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    required: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -63,6 +70,46 @@ def _resolve_env(value: Any, *, key_path: str) -> Any:
     return value
 
 
+def _load_cascade_block(
+    raw: Any, *, source_name: str, key: str
+) -> dict[str, tuple[str, ...]]:
+    """Normalize `canonical:` / `required:` per-source declarations.
+
+    Accepted shape:
+        canonical:
+          guides: ["documentation", "todos"]
+          actions: ["release-notes"]
+
+    Each port maps to a list of bare item names (no extension, no path).
+    Returns an empty dict if the block is absent.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"sources.{source_name}.{key}: must be a mapping of port → list"
+        )
+    out: dict[str, tuple[str, ...]] = {}
+    for port, names in raw.items():
+        if not isinstance(port, str):
+            raise ConfigError(
+                f"sources.{source_name}.{key}: port keys must be strings"
+            )
+        if not isinstance(names, list):
+            raise ConfigError(
+                f"sources.{source_name}.{key}.{port}: must be a list of "
+                f"item names"
+            )
+        for n in names:
+            if not isinstance(n, str) or not n:
+                raise ConfigError(
+                    f"sources.{source_name}.{key}.{port}: every entry "
+                    f"must be a non-empty string"
+                )
+        out[port] = tuple(names)
+    return out
+
+
 def _load_sources(raw: dict[str, Any]) -> dict[str, SourceConfig]:
     sources: dict[str, SourceConfig] = {}
     for name, spec in raw.items():
@@ -71,9 +118,25 @@ def _load_sources(raw: dict[str, Any]) -> dict[str, SourceConfig]:
                 f"sources.{name}: expected mapping, got {type(spec).__name__}"
             )
         kind = spec.get("type", name)
-        settings = {k: v for k, v in spec.items() if k != "type"}
+        canonical = _load_cascade_block(
+            spec.get("canonical"), source_name=name, key="canonical"
+        )
+        required = _load_cascade_block(
+            spec.get("required"), source_name=name, key="required"
+        )
+        settings = {
+            k: v
+            for k, v in spec.items()
+            if k not in ("type", "canonical", "required")
+        }
         resolved = _resolve_env(settings, key_path=f"sources.{name}")
-        sources[name] = SourceConfig(name=name, type=kind, settings=resolved)
+        sources[name] = SourceConfig(
+            name=name,
+            type=kind,
+            settings=resolved,
+            canonical=canonical,
+            required=required,
+        )
     return sources
 
 

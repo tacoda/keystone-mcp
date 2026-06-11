@@ -8,6 +8,7 @@ from fastmcp.server.providers.skills import SkillsDirectoryProvider
 from .config import load_config
 from .errors import KeystoneError
 from .harness_scaffold import Scaffold, options_catalog
+from .verify import run_doctor, run_verify
 from .prompts import (
     render_audit,
     render_bootstrap,
@@ -122,6 +123,20 @@ def build_server() -> FastMCP:
     @mcp.resource("keystone://harness/options", annotations=_READ_ONLY)
     async def harness_options_resource() -> str:
         return json.dumps(options_catalog(), indent=2)
+
+    @mcp.resource("keystone://harness/verify", annotations=_READ_ONLY)
+    async def harness_verify_resource() -> str:
+        """Cascade-engine resolution report for the current harness
+        (Phase 20). Surfaces unreachable items, canonical violations,
+        required gaps, and non-canonical conflicts. Read-only — no
+        side effects."""
+        return json.dumps(run_verify(HARNESS_ROOT, config), indent=2)
+
+    @mcp.resource("keystone://harness/doctor", annotations=_READ_ONLY)
+    async def harness_doctor_resource() -> str:
+        """Full audit report — cascade verify + path conformance +
+        ambient-load budget proxy. Read-only."""
+        return json.dumps(run_doctor(HARNESS_ROOT, config), indent=2)
 
     # Harness scaffold tools (write operations) --------------------------
     #
