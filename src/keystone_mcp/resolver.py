@@ -3,12 +3,14 @@ from typing import Any
 
 from .adapters.base import Adapter
 from .adapters.confluence import ConfluenceAdapter
+from .adapters.folder import FolderAdapter
 from .adapters.github import GitHubAdapter
 from .adapters.harness import HarnessAdapter
 from .adapters.jira import JiraAdapter
 from .adapters.linear import LinearAdapter
 from .adapters.markdown import MarkdownAdapter
 from .adapters.notion import NotionAdapter
+from .adapters.repo import RepoAdapter
 from .adapters.slack import SlackAdapter
 from .cache import SqliteCache, TTLCache, make_key, parse_ttl
 from .config import CacheConfig, KeystoneConfig, SourceConfig, TopicConfig
@@ -128,8 +130,35 @@ def _build_harness(source: SourceConfig) -> HarnessAdapter:
     return HarnessAdapter(root=_HARNESS_ROOT)
 
 
+def _build_folder(source: SourceConfig) -> FolderAdapter:
+    s = source.settings
+    root = s.get("root")
+    if not root:
+        raise ConfigError(
+            f"source {source.name!r}: folder adapter requires 'root'"
+        )
+    return FolderAdapter(root=root)
+
+
+def _build_repo(source: SourceConfig) -> RepoAdapter:
+    s = source.settings
+    src = s.get("source")
+    if not src:
+        raise ConfigError(
+            f"source {source.name!r}: repo adapter requires 'source' "
+            f"(owner/repo or git URL)"
+        )
+    return RepoAdapter(
+        source=src,
+        version=s.get("version", "main"),
+        cache_root=s.get("cache_root"),
+        ttl=s.get("ttl"),
+    )
+
+
 _BUILDERS = {
     "markdown": _build_markdown,
+    "folder": _build_folder,
     "github": _build_github,
     "confluence": _build_confluence,
     "notion": _build_notion,
@@ -137,6 +166,7 @@ _BUILDERS = {
     "linear": _build_linear,
     "slack": _build_slack,
     "harness": _build_harness,
+    "repo": _build_repo,
 }
 
 

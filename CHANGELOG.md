@@ -6,6 +6,38 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 23 — folder + repo source adapters
+
+Two new adapter types complete the external-source surface declared in
+the plan.
+
+- **`folder` adapter** (`adapters/folder.py`). Walks a local directory
+  of markdown and delegates per-file parsing to the markdown adapter.
+  Query selectors: `include` (glob list, default `["**/*.md"]`),
+  `exclude` (glob list), `file` (single-file shortcut).
+  Path-traversal is blocked: file paths must resolve under the
+  configured root.
+- **`repo` adapter** (`adapters/repo.py`). Resolves
+  `owner/repo@version` (or a full git URL) to a checked-out tree and
+  delegates to the `folder` adapter. Cache directory:
+  `~/.cache/keystone-mcp/repos/<sha>/`. Tag and sha refs cache
+  immutably; branch refs respect a configurable `ttl` (default `1h`).
+  The `git` invocation is delegated to a `git_clone` callable so
+  tests can substitute a local-tree materializer; production uses
+  `_git_clone_subprocess` shelling out to `git clone`.
+- Both adapters honor the Phase 20 cascade declarations through
+  `SourceConfig.canonical` / `SourceConfig.required` (unchanged
+  upstream).
+- `resolver.py` registers `folder` and `repo` as builders.
+- Tests: 6 cases in `tests/adapters/test_folder.py`, 9 cases in
+  `tests/adapters/test_repo.py` (with a local-tree materializer in
+  place of real git).
+
+A full repo-source manifest file (`keystone-source.yaml` shipping its
+own canonical/required) — referenced in plan §2.2 — remains a future
+phase. For now, declare the canonical/required in `context.yaml`
+directly.
+
 ### Phase 22 — flywheel playbooks first-class
 
 The Learning and Pruning flywheels gain shipped playbooks + supporting
