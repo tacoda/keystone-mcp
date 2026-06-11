@@ -4,7 +4,7 @@ All notable changes to `keystone-mcp` are documented here. Versions group
 into pre-1.0 minors per the Keystone Harness Manager plan in
 [`FEATURE_PARITY_PLAN.md`](./FEATURE_PARITY_PLAN.md).
 
-## Unreleased — 0.2.0 (in flight)
+## 0.2.0 — 2026-06-11
 
 ### Phase 27.1 — tiktoken-backed budget tokenizer (extras install)
 

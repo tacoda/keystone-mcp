@@ -30,38 +30,26 @@ broker fans the request out to the right backing source.
 
 ## Status
 
-Pre-1.0; the package name on PyPI stays `keystone-mcp`. Phases 1–24
-shipped per [`FEATURE_PARITY_PLAN.md`](./FEATURE_PARITY_PLAN.md) and
-[`CHANGELOG.md`](./CHANGELOG.md). Tests pass.
+**0.2.0.** Pre-1.0; the package name on PyPI stays `keystone-mcp`.
+Phases 1–28 shipped per [`FEATURE_PARITY_PLAN.md`](./FEATURE_PARITY_PLAN.md)
+and [`CHANGELOG.md`](./CHANGELOG.md). 361 tests pass.
 
 ## Adapters
 
 Source types (`type:` in `.keystone/context.yaml`):
 
-| Type | Description |
-| --- | --- |
-| `markdown` | One local markdown file per query. |
-| `folder` | Walk a local directory tree of markdown. Globs (`include` / `exclude`). |
-| `repo` | Resolve `owner/repo@version` or a git URL; cache under `~/.cache/keystone-mcp/repos/<sha>/`. Tag/sha refs cache immutably; branch refs honor `ttl`. |
-| `github` | Read markdown from a GitHub repo via the API. Requires `auth`. |
-| `confluence` | Pages from a Confluence Cloud workspace. Requires `email` + `auth`. |
-| `notion` | Pages from Notion. Requires `auth`. |
-| `jira` | Issues from a Jira project. Requires `auth`. |
-| `linear` | Issues from a Linear team. Requires `auth`. |
-| `slack` | Messages from a Slack channel. Requires `auth`. |
-| `harness` | The project's own `.keystone/harness/` tree (root is fixed). |
-
-## Adapter overview
-
-| Adapter | Auth | What it emits |
-|---|---|---|
-| `markdown` | none (repo-local) | rules / reasoning / skills / commands |
+| Type | Auth | What it emits |
+| --- | --- | --- |
+| `markdown` | none (repo-local) | one markdown file per query — rules / reasoning / skills / commands |
+| `folder` | none (repo-local) | walks a local directory tree of markdown. Globs (`include` / `exclude`) |
+| `repo` | (optional, depends on remote) | resolves `owner/repo@version` or a git URL; caches under `~/.cache/keystone-mcp/repos/<sha>/`. Tag/sha refs cache immutably; branch refs honor `ttl` |
 | `github` | PAT | CODEOWNERS, branch protection (rules); PRs, releases (reasoning) |
 | `confluence` | email + API token | page content (all four kinds) |
 | `notion` | integration token | page content (all four kinds), database rows (reasoning) |
 | `jira` | email + API token | issues, JQL search (reasoning) |
 | `linear` | personal API key | issues, GraphQL filter (reasoning) |
 | `slack` | bot OAuth token | pinned messages (rules), recent discussion (reasoning) |
+| `harness` | none | the project's own `.keystone/harness/` tree (root is fixed) |
 
 ## Install
 
