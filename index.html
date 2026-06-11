@@ -1172,6 +1172,13 @@
 
       <div class="nav-group">
         <span class="nav-label">Harness</span>
+        <a class="nav-link" href="#primitives">Layout &amp; primitives</a>
+        <a class="nav-link" href="#guides">Guides <span class="ext">— rules</span></a>
+        <a class="nav-link" href="#corpus">Corpus <span class="ext">— reasoning</span></a>
+        <a class="nav-link" href="#sensors">Sensors <span class="ext">— checks</span></a>
+        <a class="nav-link" href="#actions">Actions <span class="ext">— ops</span></a>
+        <a class="nav-link" href="#playbooks">Playbooks <span class="ext">— phases</span></a>
+        <a class="nav-link" href="#skills">Skills <span class="ext">— how-to</span></a>
         <a class="nav-link" href="#scaffold">Scaffold &amp; patches</a>
       </div>
 
@@ -1602,6 +1609,197 @@ The team adopted these rules after a 2025 incident.</pre>
     <p style="font-size: 0.85rem; color: var(--muted); line-height: 1.7; margin-top: 16px;">
       Default backend is in-memory (lost on restart). The sqlite backend persists envelopes across server restarts and survives <code>uvx</code> re-invocations. Per-topic TTLs use <code>5s</code> / <code>10m</code> / <code>2h</code> / <code>1d</code> syntax.
     </p>
+  </section>
+
+  <section id="primitives" class="page" data-title="Layout &amp; primitives">
+    <div class="page-head">
+      <div class="crumb">Harness · Layout</div>
+      <h1>One tree. Seven primitives. Markdown all the way down.</h1>
+      <p class="tagline">Everything inside <code>.keystone/harness/</code> is one of seven primitives. Each one has a directory, a shipped template, a <code>keystone_new_*</code> scaffolder, and a precise role in the lifecycle. Edit the markdown by hand or scaffold via MCP — both paths converge on byte-identical files.</p>
+    </div>
+
+    <div class="agents-table">
+      <div class="agent-row head">
+        <span>Directory</span>
+        <span>Role</span>
+        <span>Scaffold tool</span>
+      </div>
+      <div class="agent-row"><span class="agent-name"><code>guides/</code></span><span class="agent-menu">rules the agent obeys, tiered <code>iron-law</code> / <code>golden</code> / <code>rules</code></span><span class="agent-status real"><code>keystone_new_guide</code></span></div>
+      <div class="agent-row"><span class="agent-name"><code>corpus/</code></span><span class="agent-menu">reasoning, background, ADRs; <code>corpus/state/</code> holds the codebase ledgers</span><span class="agent-status real"><code>keystone_new_corpus</code></span></div>
+      <div class="agent-row"><span class="agent-name"><code>sensors/</code></span><span class="agent-menu">blocking checks; computational (script) or inferential (prompt)</span><span class="agent-status real"><code>keystone_new_sensor</code></span></div>
+      <div class="agent-row"><span class="agent-name"><code>scripts/</code> · <code>prompts/</code></span><span class="agent-menu">sensor bodies — shell for computational, markdown for inferential</span><span class="agent-status real"><code>keystone_new_script</code> · <code>keystone_new_prompt</code></span></div>
+      <div class="agent-row"><span class="agent-name"><code>actions/</code></span><span class="agent-menu">focused operations the agent walks (<code>spec</code>, <code>orient</code>, <code>implement</code>, …)</span><span class="agent-status real"><code>keystone_new_action</code></span></div>
+      <div class="agent-row"><span class="agent-name"><code>playbooks/</code></span><span class="agent-menu">ordered phase flows that compose actions + sensors</span><span class="agent-status real"><code>keystone_new_playbook</code></span></div>
+      <div class="agent-row"><span class="agent-name"><code>skills/</code></span><span class="agent-menu">FastMCP-native how-to entries; manager-authored auto-prefixed <code>keystone-</code></span><span class="agent-status real"><code>keystone_new_skill</code></span></div>
+      <div class="agent-row"><span class="agent-name"><code>adapters/</code></span><span class="agent-menu">per-agent activation bindings (<code>claude-code</code>, <code>codex</code>, <code>cursor</code>, …)</span><span class="agent-status real"><code>keystone_new_adapter</code></span></div>
+      <div class="agent-row"><span class="agent-name"><code>learning/inbox/</code> · <code>archive/</code></span><span class="agent-menu">flywheel storage — captured findings and pruned content</span><span class="agent-status real">filled by playbooks</span></div>
+    </div>
+
+    <div class="definition" style="margin-top: 24px;">
+      <p><strong>Single source of truth.</strong> The MCP resources at <code>keystone://</code> are projections of these files. The broker, sensors-runner, and cascade verifier all read from the same tree git tracks.</p>
+      <p><strong>Iron-law constraint.</strong> Never put secrets in this tree — it's version-controlled and team-shared. Reference environment variables via <code>env:VAR</code> in <code>.keystone/context.yaml</code>.</p>
+    </div>
+  </section>
+
+  <section id="guides" class="page" data-title="Guides">
+    <div class="page-head">
+      <div class="crumb">Harness · Guides</div>
+      <h1>Guides — the rules the agent obeys.</h1>
+      <p class="tagline"><code>guides/</code> holds the project's constraints, tiered by severity. Each guide is one markdown file; the broker emits its bullets as <code>rules</code> in the envelope with a <code>severity</code> tag derived from the tier.</p>
+    </div>
+
+    <div class="action-grid three">
+      <div class="action">
+        <span class="action-tag">iron-law</span>
+        <h3 style="color: var(--accent);">Iron law</h3>
+        <p>Non-negotiable invariants. <code>must</code> severity. Violations block the phase. Reserve for safety, security, and contract-level rules.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">golden</span>
+        <h3 style="color: var(--accent2);">Golden path</h3>
+        <p>The default way. <code>should</code> severity. The agent follows these unless a guide-tier exception applies. Most architectural decisions live here.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">rules</span>
+        <h3 style="color: var(--accent3);">Rules</h3>
+        <p>Local conventions. <code>may</code> severity. Style, naming, formatting — agents apply by default, humans override case-by-case.</p>
+      </div>
+    </div>
+
+    <div class="definition" style="margin-top: 24px;">
+      <p>Scaffold with <code>keystone_new_guide(name, tier?)</code>. The tier becomes both the file's frontmatter and the severity attached to every emitted rule.</p>
+    </div>
+  </section>
+
+  <section id="corpus" class="page" data-title="Corpus">
+    <div class="page-head">
+      <div class="crumb">Harness · Corpus</div>
+      <h1>Corpus — reasoning the agent references.</h1>
+      <p class="tagline"><code>corpus/</code> is background: architecture decisions, domain glossaries, "why we do it this way" notes. The broker emits corpus content as <code>reasoning</code> — context the agent reads but does not enforce.</p>
+    </div>
+
+    <div class="agents-table">
+      <div class="agent-row head">
+        <span>Ledger</span>
+        <span>Path</span>
+        <span>What it tracks</span>
+      </div>
+      <div class="agent-row"><span class="agent-name">Codebase state</span><span class="agent-menu"><code>corpus/state/CODEBASE_STATE.md</code></span><span class="agent-status real">top-level map of subsystems, owners, conventions</span></div>
+      <div class="agent-row"><span class="agent-name">Risk fingerprints</span><span class="agent-menu"><code>corpus/state/risk-fingerprints.md</code></span><span class="agent-status real">files and patterns that have broken before</span></div>
+      <div class="agent-row"><span class="agent-name">Quality radar</span><span class="agent-menu"><code>corpus/state/quality-radar.md</code></span><span class="agent-status real">recurring smells, coverage gaps, hotspots</span></div>
+      <div class="agent-row"><span class="agent-name">Traffic topology</span><span class="agent-menu"><code>corpus/state/traffic-topology.md</code></span><span class="agent-status real">request flow, queue topology, deploy targets</span></div>
+      <div class="agent-row"><span class="agent-name">Code debt</span><span class="agent-menu"><code>corpus/state/code-debt.md</code></span><span class="agent-status real">acknowledged debt with rationale and exit plan</span></div>
+    </div>
+
+    <div class="definition" style="margin-top: 24px;">
+      <p>The <code>bootstrap</code> playbook fills these ledgers from a one-time codebase analysis; the <code>audit</code> playbook keeps them current. Scaffold ad-hoc corpus notes with <code>keystone_new_corpus(name)</code>.</p>
+    </div>
+  </section>
+
+  <section id="sensors" class="page" data-title="Sensors">
+    <div class="page-head">
+      <div class="crumb">Harness · Sensors</div>
+      <h1>Sensors — blocking checks at phase boundaries.</h1>
+      <p class="tagline">A sensor is one markdown file declaring a <code>kind</code> (computational or inferential) and a <code>mode</code> (blocking or advisory). The <code>keystone-sensor-runner</code> skill walks them at phase boundaries; failures stop the lifecycle.</p>
+    </div>
+
+    <div class="action-grid two">
+      <div class="action">
+        <span class="action-tag">computational</span>
+        <h3 style="color: var(--accent);">Script-backed</h3>
+        <p>Deterministic — runs a shell body from <code>scripts/&lt;name&gt;.sh</code>. Default sensors: <code>lint</code>, <code>type</code>, <code>test</code>, <code>build</code>, <code>coverage</code>, <code>drift</code>. Exit code is the verdict.</p>
+      </div>
+      <div class="action">
+        <span class="action-tag">inferential</span>
+        <h3 style="color: var(--accent2);">Prompt-backed</h3>
+        <p>Agent-judged — runs a prompt body from <code>prompts/&lt;name&gt;.md</code> against the diff. Default sensors: <code>code-review</code>, <code>security-review</code>, <code>performance-review</code>, <code>accessibility-review</code>.</p>
+      </div>
+    </div>
+
+    <div class="definition" style="margin-top: 24px;">
+      <p>Scaffold with <code>keystone_new_sensor(name, kind?, mode?)</code> — the tool writes both the sensor and a matching script or prompt stub. Health surfaces at <code>keystone://sensor/&lt;name&gt;/health</code>; the <code>doctor</code> playbook rolls them up.</p>
+    </div>
+  </section>
+
+  <section id="actions" class="page" data-title="Actions">
+    <div class="page-head">
+      <div class="crumb">Harness · Actions</div>
+      <h1>Actions — focused operations the agent walks.</h1>
+      <p class="tagline">An action is one markdown procedure for one job. Playbooks compose actions; the agent reads the action body verbatim, asks for missing inputs, runs the steps, and reports back.</p>
+    </div>
+
+    <div class="agents-table">
+      <div class="agent-row head">
+        <span>Action</span>
+        <span>Phase</span>
+        <span>Purpose</span>
+      </div>
+      <div class="agent-row"><span class="agent-name"><code>spec</code></span><span class="agent-menu">spec</span><span class="agent-status real">clarify requirements; write acceptance criteria</span></div>
+      <div class="agent-row"><span class="agent-name"><code>orient</code></span><span class="agent-menu">planning</span><span class="agent-status real">map affected files; check state ledgers</span></div>
+      <div class="agent-row"><span class="agent-name"><code>implement</code></span><span class="agent-menu">implementation</span><span class="agent-status real">make the change; keep diffs reviewable</span></div>
+      <div class="agent-row"><span class="agent-name"><code>verify</code></span><span class="agent-menu">verification</span><span class="agent-status real">run sensors; confirm acceptance criteria</span></div>
+      <div class="agent-row"><span class="agent-name"><code>review</code></span><span class="agent-menu">review</span><span class="agent-status real">self-review against guides + state</span></div>
+      <div class="agent-row"><span class="agent-name"><code>learn</code></span><span class="agent-menu">flywheel</span><span class="agent-status real">capture a surprise into <code>learning/inbox/</code></span></div>
+      <div class="agent-row"><span class="agent-name"><code>audit</code></span><span class="agent-menu">flywheel</span><span class="agent-status real">walk inbox, classify into guides / corpus / archive</span></div>
+      <div class="agent-row"><span class="agent-name"><code>release</code></span><span class="agent-menu">release</span><span class="agent-status real">cut a release; update changelog</span></div>
+    </div>
+
+    <div class="definition" style="margin-top: 24px;">
+      <p>Scaffold with <code>keystone_new_action(name)</code>. Actions are small and composable — favor adding a new action over growing an existing one.</p>
+    </div>
+  </section>
+
+  <section id="playbooks" class="page" data-title="Playbooks">
+    <div class="page-head">
+      <div class="crumb">Harness · Playbooks</div>
+      <h1>Playbooks — ordered phase flows.</h1>
+      <p class="tagline">A playbook composes actions and sensors into a multi-phase flow. Where an action does one job, a playbook drives a lifecycle. Shipped playbooks cover bootstrap, task, audit, install, verify, doctor, patch, and release.</p>
+    </div>
+
+    <div class="agents-table">
+      <div class="agent-row head">
+        <span>Playbook</span>
+        <span>When</span>
+        <span>What it does</span>
+      </div>
+      <div class="agent-row"><span class="agent-name"><code>bootstrap</code></span><span class="agent-menu">first-run</span><span class="agent-status real">codebase analysis; fill <code>corpus/state/</code> ledgers</span></div>
+      <div class="agent-row"><span class="agent-name"><code>task</code></span><span class="agent-menu">per request</span><span class="agent-status real">spec → orient → implement → verify → review</span></div>
+      <div class="agent-row"><span class="agent-name"><code>audit</code></span><span class="agent-menu">recurring</span><span class="agent-status real">dual flywheel — learn (additive) + prune (subtractive)</span></div>
+      <div class="agent-row"><span class="agent-name"><code>install</code></span><span class="agent-menu">on demand</span><span class="agent-status real">add a new external source via the source-installer skill</span></div>
+      <div class="agent-row"><span class="agent-name"><code>verify</code></span><span class="agent-menu">pre-commit / pre-PR</span><span class="agent-status real">run all blocking sensors against current diff</span></div>
+      <div class="agent-row"><span class="agent-name"><code>doctor</code></span><span class="agent-menu">on demand</span><span class="agent-status real">harness layout audit + sensor health rollup</span></div>
+      <div class="agent-row"><span class="agent-name"><code>patch</code></span><span class="agent-menu">after upgrade</span><span class="agent-status real">apply pending shipped template patches</span></div>
+      <div class="agent-row"><span class="agent-name"><code>release</code></span><span class="agent-menu">release-time</span><span class="agent-status real">drive the release action + changelog handoff</span></div>
+    </div>
+
+    <div class="definition" style="margin-top: 24px;">
+      <p>Scaffold custom playbooks with <code>keystone_new_playbook(name)</code>. Existing playbooks are surface API contracts — patch them via the template patch system rather than free-form editing if you want forward updates.</p>
+    </div>
+  </section>
+
+  <section id="skills" class="page" data-title="Skills">
+    <div class="page-head">
+      <div class="crumb">Harness · Skills</div>
+      <h1>Skills — FastMCP-native how-to entries.</h1>
+      <p class="tagline">Each skill is a directory with a <code>SKILL.md</code> at its root plus any supporting files. FastMCP's <code>SkillsDirectoryProvider</code> auto-discovers them as <code>skill://&lt;name&gt;/SKILL.md</code> resources; Claude Code, Cursor, and any FastMCP-aware host surface them in the agent's skill registry.</p>
+    </div>
+
+    <div class="agents-table">
+      <div class="agent-row head">
+        <span>Skill</span>
+        <span>Purpose</span>
+        <span>Triggered by</span>
+      </div>
+      <div class="agent-row"><span class="agent-name"><code>keystone-sensor-runner</code></span><span class="agent-menu">walk sensors at a phase boundary; aggregate verdicts</span><span class="agent-status real"><code>verify</code> playbook</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone-source-installer</code></span><span class="agent-menu">add a new external source to <code>.keystone/context.yaml</code></span><span class="agent-status real"><code>install</code> playbook</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone-archive</code></span><span class="agent-menu">retire content into <code>archive/</code> without losing history</span><span class="agent-status real"><code>audit</code> playbook (pruning flywheel)</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone-budget-reporter</code></span><span class="agent-menu">report ambient-load token budget for the harness</span><span class="agent-status real"><code>doctor</code> playbook</span></div>
+      <div class="agent-row"><span class="agent-name"><code>keystone-reload-notice</code></span><span class="agent-menu">prompt the agent to reload after template-tree changes</span><span class="agent-status real">patch + scaffold tools</span></div>
+    </div>
+
+    <div class="definition" style="margin-top: 24px;">
+      <p>Scaffold with <code>keystone_new_skill(name, description?)</code>. Manager-authored skills are auto-prefixed <code>keystone-</code>; project-local skills you author keep whatever name you give them.</p>
+    </div>
   </section>
 
   <section id="scaffold" class="page" data-title="Scaffold">
