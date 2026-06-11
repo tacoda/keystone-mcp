@@ -6,6 +6,27 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 22 — flywheel playbooks first-class
+
+The Learning and Pruning flywheels gain shipped playbooks + supporting
+skills.
+
+- New shipped playbook: `templates/harness/playbooks/learn.md` —
+  captures a finding into `learning/inbox/`, proposes a
+  classification, optionally fires the reload-notice skill. Mirrors
+  the `keystone_learn` MCP prompt.
+- New shipped skill:
+  `templates/harness/skills/keystone-reload-notice/SKILL.md` — emits
+  the explicit "harness reload needed" notice when guides change
+  mid-session.
+- New shipped skill:
+  `templates/harness/skills/keystone-archive/SKILL.md` — moves a
+  retired file to `archive/<port>/<name>.md` with reasoning
+  frontmatter. The pruning flywheel never deletes.
+- `keystone_audit` and `keystone_learn` MCP prompts reframe to walk
+  the shipped playbooks, matching the Phase 18 / 19 template-driven
+  architecture.
+
 ### Phase 21 — source installer skill + patch system skeleton
 
 **New.** Lifecycle flows for installing external sources and updating

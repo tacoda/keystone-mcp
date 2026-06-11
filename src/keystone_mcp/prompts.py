@@ -150,7 +150,14 @@ def render_audit() -> str:
 # Audit workflow
 
 You are running the dual-flywheel audit on the project harness. Two
-parallel passes:
+parallel passes — Learning (additive) and Pruning (subtractive) —
+plus a state-drift refresh and a reload notice if any `guides/` file
+changed.
+
+## Walk the playbook
+
+Read `.keystone/harness/playbooks/audit.md` and follow it phase by
+phase. The playbook covers:
 
 ## Learning flywheel
 
@@ -158,8 +165,8 @@ parallel passes:
    whether to promote it to a guide (`keystone_new_guide`) or skill
    (`keystone_new_skill`), park it for more evidence, or discard.
 2. Read recent commits. Surface patterns that should become guides.
-3. Append new findings to the inbox via the `keystone_learn` prompt for
-   the next audit pass.
+3. Append new findings to the inbox via the `keystone_learn` prompt
+   for the next audit pass.
 
 ## Pruning flywheel
 
@@ -175,12 +182,21 @@ Walk the harness and propose retirements. Categories:
 6. **Drifted state** — `CODEBASE_STATE.md` stale `last_reconciled`,
    stack-drift findings.
 
+Move retirements via the `keystone-archive` skill to
+`archive/<port>/<name>.md` with reasoning frontmatter — never delete.
+
 Then update the empirical state files in `corpus/state/`:
 
 7. Risk fingerprint — re-read the codebase, refresh
    `risk-fingerprints.md`.
 8. Traffic topology — re-trace entry points, refresh
    `traffic-topology.md`.
+
+## Reload notice
+
+If `guides/` was touched, emit the reload notice via the
+`keystone-reload-notice` skill so the user knows the current session's
+ambient context is stale.
 
 ## Output
 
@@ -195,38 +211,33 @@ def render_learn(finding: str) -> str:
     return f"""\
 # Learn — capture a finding
 
-Capture this finding into `.keystone/harness/learning/inbox/` so the next
-audit pass can decide whether to promote it to a guide or skill:
+Capture this finding into `.keystone/harness/learning/inbox/` so the
+next audit pass can decide whether to promote it to a guide, skill,
+action, or playbook:
 
 > {finding}
 
-## Steps
+## Walk the playbook
 
-1. Read `keystone://harness/status` to confirm the inbox exists. If not,
-   run `keystone_harness_bootstrap` first.
+Read `.keystone/harness/playbooks/learn.md` and follow it phase by
+phase. The playbook covers:
 
-2. Classify the finding:
-   - **Iron law** — a constraint that must always hold. Use
-     `keystone_new_guide(name, tier="iron-law")` later.
-   - **Rule / golden rule** — a normal or aspirational rule. Use
-     `keystone_new_guide(name, tier="rules")` or `tier="golden"` later.
-   - **Skill** — a procedural how-to. Use `keystone_new_skill(name)` later.
-   - **Reasoning** — background fact / ADR. Goes in corpus, not inbox.
-   - **Defer** — interesting but not actionable yet.
-
-3. Write a brief markdown note (use Write / Edit tools, not a scaffold
-   tool — inbox entries are free-form) at
-   `.keystone/harness/learning/inbox/<short-slug>.md` containing:
-   - **Finding** — one-paragraph statement.
-   - **Evidence** — diff lines, file paths, sensor output, or PR links.
-   - **Proposed classification** — from step 2.
-   - **Proposed home** — exact path the promotion would land at.
-
-4. Do NOT promote on the spot. The audit workflow makes promotion
-   decisions in batch.
+- confirm the inbox exists (run `keystone_harness_bootstrap()` if not)
+- propose a classification — one of:
+  - **Iron law** — constraint that must always hold.
+  - **Golden rule** — preferred-path rule; deviation needs reasoning.
+  - **Rule** — a normal rule.
+  - **Skill** — procedural how-to.
+  - **Reasoning** — background fact or ADR.
+  - **Defer** — interesting but not actionable yet.
+- write the inbox entry with finding, evidence, proposed
+  classification, and proposed home
+- (optional) emit a reload notice via the `keystone-reload-notice`
+  skill
 
 ## Iron laws
 
 - No invented evidence. Cite real diffs, real sensor output, real PRs.
 - No secrets in inbox entries. Reference env vars via `env:VAR`.
+- No on-the-spot promotion. Promotion happens during audit.
 """
