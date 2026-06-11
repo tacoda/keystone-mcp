@@ -6,6 +6,22 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 27 — token budget + observability
+
+- New module `keystone_mcp/budget.py`. Computes per-port file counts,
+  word counts, approximate-token counts (word/0.75 heuristic), top-N
+  hot files, and a `cascade_excluded` block when the cascade marks
+  items unreachable.
+- Deterministic word-count proxy; no `tiktoken` dependency. A
+  tokenizer-backed counter behind an extras install lands later.
+- New MCP resource: `keystone://harness/budget` — read-only.
+- `keystone://harness/doctor` now also includes a `budget` block
+  alongside the legacy `budget_proxy` (kept for backward
+  compatibility).
+- Shipped skill
+  `templates/harness/skills/keystone-budget-reporter/SKILL.md` —
+  walks the user through the report.
+
 ### Phase 26 — edit-path triad tests
 
 New `tests/test_edit_path_triad.py` asserts that the same logical

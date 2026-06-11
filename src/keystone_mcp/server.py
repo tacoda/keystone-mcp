@@ -7,9 +7,10 @@ from fastmcp.server.providers.skills import SkillsDirectoryProvider
 
 from .config import load_config
 from .errors import KeystoneError
+from .budget import budget_report
 from .harness_scaffold import Scaffold, options_catalog
 from .patches import apply_patches, pending_patches
-from .verify import run_doctor, run_verify
+from .verify import run_doctor, run_verify, run_verify_cascade
 from .prompts import (
     render_audit,
     render_bootstrap,
@@ -148,6 +149,17 @@ def build_server() -> FastMCP:
         patch playbook, plus files skipped because the consumer has
         modified them since the previous shipped version."""
         return json.dumps(pending_patches(HARNESS_ROOT), indent=2)
+
+    @mcp.resource("keystone://harness/budget", annotations=_READ_ONLY)
+    async def harness_budget_resource() -> str:
+        """Ambient-load budget report for the project harness (Phase
+        27). Per-port totals, top hot files, approximate-token counts
+        via a deterministic word-count proxy, and (when the cascade
+        marks items unreachable) a `cascade_excluded` block."""
+        cascade = run_verify_cascade(HARNESS_ROOT, config)
+        return json.dumps(
+            budget_report(HARNESS_ROOT, cascade=cascade), indent=2
+        )
 
     # Harness scaffold tools (write operations) --------------------------
     #

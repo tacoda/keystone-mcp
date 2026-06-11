@@ -196,6 +196,7 @@ tools refuse to write files whose names look like secrets (`secret`, `token`,
 | `keystone://harness/verify` | cascade report (resolved / unreachable / canonical_violations / required_gaps / conflicts) |
 | `keystone://harness/doctor` | verify + path conformance + ambient-load budget proxy |
 | `keystone://harness/patch/pending` | pending shipped patches and detected conflicts |
+| `keystone://harness/budget` | ambient-load budget report (per-port + hot files + approximate tokens) |
 
 ### Envelope shape
 

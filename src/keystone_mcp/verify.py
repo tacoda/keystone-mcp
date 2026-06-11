@@ -128,6 +128,21 @@ def _source_items(config: KeystoneConfig) -> list[list[Item]]:
     return layers
 
 
+def run_verify_cascade(
+    harness_root: str | Path, config: KeystoneConfig
+):
+    """Same as `run_verify` but returns the in-memory `CascadeReport`.
+
+    Used by callers (budget reporter, doctor) that want to operate on
+    typed cascade entries without re-parsing the dict form.
+    """
+    root = Path(harness_root).expanduser().resolve()
+    project_items, project_paths = _project_items(root)
+    layers = _source_items(config)
+    layers.append(project_items)
+    return resolve(layers, project_paths=project_paths)
+
+
 def run_verify(
     harness_root: str | Path, config: KeystoneConfig
 ) -> dict[str, Any]:
@@ -137,10 +152,7 @@ def run_verify(
     `keystone://harness/verify` resource.
     """
     root = Path(harness_root).expanduser().resolve()
-    project_items, project_paths = _project_items(root)
-    layers = _source_items(config)
-    layers.append(project_items)
-    report = resolve(layers, project_paths=project_paths)
+    report = run_verify_cascade(root, config)
     return {
         "harness_root": str(root),
         "cascade": report.to_dict(),
@@ -166,13 +178,37 @@ def _path_conformance(harness_root: Path) -> dict[str, Any]:
     }
 
 
-def _budget_proxy(harness_root: Path) -> dict[str, Any]:
-    """Word-count proxy for the ambient-load token cost of the harness.
+def run_doctor(
+    harness_root: str | Path, config: KeystoneConfig
+) -> dict[str, Any]:
+    """Doctor report: verify + path conformance + ambient-load budget."""
+    from .budget import budget_report
 
-    A deterministic word-count (not a real tokenizer) keeps the
-    dependency footprint small. Phase 27 swaps this for a tokenizer-
-    backed counter behind an extras install.
-    """
+    root = Path(harness_root).expanduser().resolve()
+    cascade = run_verify_cascade(root, config)
+    verify_payload = {
+        "harness_root": str(root),
+        "cascade": cascade.to_dict(),
+        "summary": {
+            "resolved": len(cascade.resolved),
+            "unreachable": len(cascade.unreachable),
+            "canonical_violations": len(cascade.canonical_violations),
+            "required_gaps": len(cascade.required_gaps),
+            "conflicts": len(cascade.conflicts),
+        },
+    }
+    return {
+        **verify_payload,
+        "path_conformance": _path_conformance(root),
+        "budget_proxy": _legacy_budget_proxy(root),
+        "budget": budget_report(root, cascade=cascade),
+    }
+
+
+def _legacy_budget_proxy(harness_root: Path) -> dict[str, Any]:
+    """Pre-Phase-27 budget proxy. Retained for backward compatibility
+    with consumers reading `doctor.budget_proxy`. New consumers should
+    read `doctor.budget` (richer shape, supports cascade-excluded)."""
     per_port: dict[str, dict[str, int]] = {}
     if not harness_root.is_dir():
         return {"per_port": per_port, "total_words": 0}
@@ -195,16 +231,3 @@ def _budget_proxy(harness_root: Path) -> dict[str, Any]:
         per_port[sub] = {"files": files, "words": words}
         total += words
     return {"per_port": per_port, "total_words": total}
-
-
-def run_doctor(
-    harness_root: str | Path, config: KeystoneConfig
-) -> dict[str, Any]:
-    """Doctor report: verify + path conformance + budget proxy."""
-    root = Path(harness_root).expanduser().resolve()
-    verify_payload = run_verify(root, config)
-    return {
-        **verify_payload,
-        "path_conformance": _path_conformance(root),
-        "budget_proxy": _budget_proxy(root),
-    }
