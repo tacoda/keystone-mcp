@@ -849,6 +849,8 @@ def test_options_catalog_lists_choices():
     cat = options_catalog()
     assert set(cat["guide_tiers"]) == {"iron-law", "golden", "rules"}
     assert "build" in cat["sensor_kinds"]
+    # Phase 24: sensor_modes surfaced.
+    assert set(cat["sensor_modes"]) == {"computational", "inferential"}
     assert "claude-code" in cat["supported_agents"]
     assert "CLAUDE.md" in cat["agent_menu_files"]["claude-code"]
 

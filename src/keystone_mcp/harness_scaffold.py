@@ -950,6 +950,7 @@ def options_catalog() -> dict[str, Any]:
     return {
         "guide_tiers": list(GUIDE_TIERS),
         "sensor_kinds": list(SENSOR_KINDS),
+        "sensor_modes": list(SENSOR_MODES),
         "supported_agents": list(SUPPORTED_AGENTS),
         "agent_menu_files": {
             agent: list(files) for agent, files in _AGENT_MENU_FILES.items()

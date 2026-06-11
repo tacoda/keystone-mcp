@@ -6,6 +6,20 @@ into pre-1.0 minors per the Keystone Harness Manager plan in
 
 ## Unreleased — 0.2.0 (in flight)
 
+### Phase 24 — inferential sensors first-class
+
+- `keystone://harness/options` now lists `sensor_modes`
+  (`computational`, `inferential`) alongside `sensor_kinds`.
+- Shipped sensor library (Phase 18) already includes the default
+  inferential sensors: `security-review`, `code-review`,
+  `accessibility-review`, `performance-review` with prompt bodies
+  under `prompts/`.
+- New shipped skill
+  `templates/harness/skills/keystone-sensor-runner/SKILL.md` —
+  single entry point for the verify phase. Enumerates every sensor,
+  runs computational ones via Bash and inferential ones by reading
+  the matching prompt, aggregates into a unified PASS/FAIL report.
+
 ### Phase 23 — folder + repo source adapters
 
 Two new adapter types complete the external-source surface declared in
