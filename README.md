@@ -1,5 +1,7 @@
 # keystone-mcp — Keystone Harness Manager
 
+Project archived in favor of [Keystone](https://github.com/tacoda/keystone)
+
 The **Keystone Harness Manager** is the end-to-end harness manager for any
 project. It's a single MCP server (`keystone-mcp` on PyPI) that owns the
 full lifecycle of a project harness:
